@@ -1,0 +1,43 @@
+{
+  "summary": "Retested the iteration_1 fixes. Backend: 18/18 pytest passed. PUT /api/plans/{id} by another trainer now returns 403 (tested both with and without a client_id override). Bad day_index (9 and -1) returns 400. A non-numeric skinfold returns 400. Comma skinfolds ('10,5') are accepted and sum_folds=45.5. Frontend at 375x667: '79,5' kg and '180,5' height saved as 79.5 and 180.5 with the BMI computed. Manual food with comma fields saved correctly (150.5g, 201 kcal) and produced no console warnings. The meal delete target is 44x44. Barcode grams '80,5' gave correct macros and saved 80.5g. Photos posing upload is hidden when competitor is false and shown when it is true (tested via in-app navigation). Regression: trainer and client login, client home and the Cibo tab all work. New issue: deep-linking or refreshing an inner screen fires API calls before the stored token loads. They return 401, so the screen shows empty data with no error. React Native issue: the unstable-native-tabs import is deprecated and 'expo-router/native-tabs' DOES exist in the installed expo-router 58.0.25.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/plans", "issue": "No min_length on name, so a plan with an empty name and no days can be created (the DB already has one, created at 11:01:28, not by this run). The client home shows it as a blank card. The iteration_1 min_length action item is still open."},
+      {"endpoint": "GET /api/measurements", "issue": "Sorted by date only, with no created_at tiebreak. Two measurements on the same date show the older one first, highlighted as the latest."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "App bootstrap / useFetch", "issue": "app/_layout.tsx renders the Stack before AuthProvider has finished loadToken(). On a deep link or web refresh of an inner screen (e.g. /measurements/{id}, /photos/{id}), the first fetches go out with no token and get 401. Result: no cards, plus a false 'inserisci sesso e data di nascita' hint on measurements and a false non-competitor hint on photos. No error is shown. Reproduced: /measurements/{cid} showed 0 cards (5 exist) with two 401s.", "testID": "new-measurement-button", "priority": "MEDIUM"},
+      {"component": "Barcode product card", "issue": "The OpenFoodFacts image_front_small_url does not render on web; a blank 64px area shows next to the product name.", "testID": "barcode-product-card", "priority": "LOW"},
+      {"component": "Meal delete", "issue": "44px target is fixed, but delete still has no confirmation (requested in iteration_1).", "testID": "meal-delete-{id}", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Client home", "issues": ["A plan with an empty name and no days shows as an empty card with just the laser divider"]}
+    ],
+    "react_native_issues": [
+      {"component": "expo-router/unstable-native-tabs", "issue": "The runtime warns: '`expo-router/unstable-native-tabs` is deprecated. Use `expo-router/native-tabs` instead.' The installed expo-router@58.0.25 exports './native-tabs' (package.json exports -> build/native-tabs/index.js, which exports NativeTabs). It resolves through package exports just like the current import; there is simply no root folder for it. Reference: /app/frontend/app/(tabs)/_layout.tsx:2"}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_silverpt_api.py", "/app/test_reports/pytest/pytest_results_iter2.xml"],
+  "action_items": [
+    "Gate rendering on auth ready (e.g. return null or a splash in the root layout, or have useFetch wait for ready/token) so deep-linked screens don't fetch without a token. Show the useFetch error in screens.",
+    "Change the import in app/(tabs)/_layout.tsx to 'expo-router/native-tabs'; it exists in expo-router 58.0.25.",
+    "Add min_length=1 to PlanIn.name (and other title/name fields) and hide or clean up the existing empty plan.",
+    "Sort measurements by [date desc, created_at desc].",
+    "Optional: add a delete confirmation for meals; handle barcode image load failure."
+  ],
+  "critical_code_review_comments": [
+    "src/api.ts num() returns 0 for invalid input, so 'abc' in the kcal field silently saves 0. Acceptable, but no validation feedback is given.",
+    "PUT /api/clients/{id}/profile replaces the whole profile object; partial updates from other clients would wipe fields."
+  ],
+  "updated_files": ["/app/backend/tests/test_silverpt_api.py (stricter 400/403 assertions; added invalid- and comma-skinfold tests)"],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100% of requested fixes verified; 1 new medium bug (deep-link 401)"},
+  "seed_data_creation": "None kept. All data created in this run was deleted (5 test users, plan+session, 3 measurements, 2 meals, appointments, photo, video, comments). Client profile restored to {sex: M, birth_date: 1990-05-10}. Pre-existing non-test data left as-is: an empty-name plan, a 'Barilla 80g' meal and 2 earlier measurements.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Client id 6ae7273ec8f277d3e820ac37. To test inner screens, navigate in-app after login (client-card-{id} -> tile text 'FOTO CHECK'/'MISURE ISSA'). page.goto deep links currently hit the 401 bug. Use dispatch_event('click') on sheet buttons. pytest needs /tmp/food.jpg. Pytest runs with xdist (gw0/gw1). Cleanup: delete docs with created_at >= run start, plus test_* users.",
+  "rca_of_issue": "Deep-link 401: AuthProvider sets the token inside an async effect (loadToken -> secureGet), but RootLayout renders <Stack/> right away. The screen's useFocusEffect fires api() while the module-level token is still '', so the server returns 401. useFetch stores the error, which most screens ignore. Fix: render children only when ready, or make useFetch depend on auth ready/user."
+}

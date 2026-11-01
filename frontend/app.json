@@ -1,0 +1,73 @@
+{
+  "expo": {
+    "name": "SILVER-PT",
+    "slug": "frontend",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "frontend",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.emergent.silvercoachhub.idbb9p",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scatta foto check, video e scansiona alimenti",
+        "NSPhotoLibraryUsageDescription": "Carica foto check e video dalla galleria",
+        "NSMicrophoneUsageDescription": "Registra l'audio dei video di allenamento"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "package": "com.emergent.silvercoachhub.idbb9p",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-image.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#000000"
+        }
+      ],
+      "expo-font",
+      "expo-image",
+      "expo-secure-store",
+      "expo-web-browser",
+      "expo-status-bar",
+      "expo-video",
+      "@react-native-vector-icons/ionicons",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Carica foto check e video dalla galleria",
+          "cameraPermission": "Scatta foto check e video degli esercizi"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scansiona codici a barre degli alimenti",
+          "recordAudioAndroid": true
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "backgroundColor": "#000000"
+  }
+}

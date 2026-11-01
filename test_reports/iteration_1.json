@@ -1,0 +1,57 @@
+{
+  "summary": "First full test run of SILVER-PT. Backend: 16 pytest tests, 14 passed. Auth (trainer/client/invalid invite/duplicate), clients and access control, appointments with status and comments, ISSA measurements (JP3 + Siri, BMI, fat/lean mass), plans, sessions, progress, upload and token file download, photos, videos with trainer comments setting reviewed, Open Food Facts barcode, GPT-5.5 food photo analysis with a real pizza image, and meals CRUD all work. 2 real bugs were found: an IDOR on PUT /plans and a 500 error on an invalid day_index. Frontend at 390x844: all requested flows pass end-to-end. These are login, the trainer home with invite code D7E5CF and the client list, the client hub, creating a plan in plan-edit, the plan appearing on the client home, starting a session with Avvia, completing sets, Termina sessione (the progress API showed 82.5 kg max load), the new appointment sheet, the appointment detail with comment and status, nutrition manual add, barcode lookup by manual code and delete, the measurements sheet (body fat 13.1%), the progress chart, the photos screen, the video inbox and detail, profile save and logout. No red screens or page errors. Deprecated packages detected: none (uses expo-video, expo-camera, expo-image-picker). Warning: expo-router/unstable-native-tabs is deprecated. Main issues: decimal commas are silently dropped in weight and nutrition fields, a controlled/uncontrolled input warning, and the barcode macro tiles overflowing.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "PUT /api/plans/{plan_id}", "issue": "IDOR: the endpoint only checks access to body.client_id and never checks that the plan belongs to that client or trainer. Any trainer can overwrite any plan by passing one of their own client_ids (reproduced: trainer2 renamed trainer1's plan to 'HACKED'). Fix: load the plan, call assert_access(user, plan['client_id']) and require plan.client_id == body.client_id. Reference: server.py:397-401", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/sessions", "issue": "An out-of-range day_index returns 500 (IndexError at server.py:432). Should return 400 or 404."},
+      {"endpoint": "POST /api/measurements", "issue": "A non-numeric skinfold value (e.g. 'abc') returns 500 (float() ValueError in body_fat, server.py:318). Parse with num() and skip invalid values, or return 422."},
+      {"endpoint": "POST /api/appointments", "issue": "The 'start' value is not validated: start='bad' is accepted with 200. Validate it as ISO datetime."},
+      {"endpoint": "POST /api/plans", "issue": "An empty plan name is accepted. Add min_length to PlanIn.name, and also to title, name and text in the other models."},
+      {"endpoint": "POST /api/auth/register", "issue": "Anyone can self-register with role='trainer'. Confirm this is intended."},
+      {"endpoint": "GET /api/files/{path}?token=", "issue": "A 30-day JWT is passed in the URL query, where it can leak into logs and history. Consider short-lived signed file tokens."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Decimal comma input (Italian locale)", "issue": "The weight/height fields in measurements (measurements/[clientId].tsx:42), the kcal/protein/carbs/fat/grams fields in manual food (src/nutrition.tsx:45-46) and barcode grams (app/barcode.tsx:36) use Number(v) without replacing ',' with '.'. '79,5' becomes NaN, so the value is silently saved as null or 0. The Italian iOS decimal-pad only offers ','. Skinfolds already handle this through toNums.", "testID": "measure-weight-input, food-kcal-input, barcode-grams-input", "priority": "HIGH"},
+      {"component": "Nutrition manual food sheet", "issue": "Console error 'A component is changing a controlled input to be uncontrolled'. Field value={form?.name} becomes undefined when the form is reset to null after saving, which shows a red LogBox toast. Use form?.name ?? ''.", "testID": "food-name-input", "priority": "MEDIUM"},
+      {"component": "Meal delete", "issue": "Deletes with no confirmation. The touch target is a 20px icon with hitSlop 8, so about 36px, under the 44px minimum.", "testID": "meal-delete-{id}", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Barcode product card", "issues": ["The macro tiles overflow at 390px: '393.6' kcal wraps to '393.' / '6' and 'GRASSI' wraps to 'GRASS I'. Round kcal and shrink the font, or use a 2x2 grid.", "Space is left empty on the left where the product image (image_front_small_url) did not render."]},
+      {"screen": "Session screen", "issues": ["The column headers (KG/RIP/RIR/ESE) are not centred over their input cells."]},
+      {"screen": "Photos", "issues": ["The posing section shows even when competitor=false, although its text says it is enabled from the profile."]},
+      {"screen": "Tabs", "issues": ["The tab bar items have no testIDs."]}
+    ],
+    "react_native_issues": [
+      {"component": "expo-router/unstable-native-tabs", "issue": "Console warning: 'expo-router/unstable-native-tabs' is deprecated; use 'expo-router/native-tabs'. Reference: /app/frontend/app/(tabs)/_layout.tsx:2"}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_silverpt_api.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Fix the IDOR in PUT /api/plans/{plan_id}: verify the plan's existing client_id or trainer_id before updating",
+    "Return 400 for an out-of-range day_index in POST /api/sessions",
+    "Make body_fat() tolerate invalid or comma values (use num()) so measurements never return 500",
+    "Frontend: replace ',' with '.' before Number() in measurement weight/height, the nutrition form and barcode grams",
+    "Use value={form?.x ?? ''} in the nutrition sheet Fields to stop the controlled/uncontrolled warning",
+    "Change the import to 'expo-router/native-tabs' in app/(tabs)/_layout.tsx",
+    "Fix the barcode macro tile overflow; add a confirm dialog and a 44px target for meal delete",
+    "Add min_length validation to name/title fields and ISO datetime validation for appointment start"
+  ],
+  "critical_code_review_comments": [
+    "server.py update_plan does not check that the plan belongs to the trainer (security)",
+    "server.py start_session indexes p['days'][day_index] without a bounds check",
+    "ProfileIn replaces the whole profile dict. The UI currently sends the full profile, but any partial update would wipe other fields; consider $set on profile.<key>",
+    "Session set edits made after a set is ticked are only saved on Termina sessione. If the app is closed mid-session, values typed into the cells are lost unless the set is toggled"
+  ],
+  "updated_files": ["/app/backend/tests/test_silverpt_api.py (new)"],
+  "success_rate": {"backend": "87.5% (14/16)", "frontend": "100% of requested flows functional (minor UI issues)"},
+  "seed_data_creation": "Test users, plans, appointments, sessions and videos (TEST_/UI_TEST/HACKED) were deleted after the run. Kept on Marco Rossi (cliente@silverpt.it): 2 measurements (2026-01-10 and today), 1 front photo, 1 Barilla pesto meal (today), 1 completed UI Squat session was deleted. Profile now has phone 3331234567 and goal 'UI_TEST Ricomposizione'.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The container clock is Nov 2026. Sheets animate in, so wait about 1.2s or use dispatch_event('click') on sheet elements. header-back-button appears twice because of the stacked screen; use ':visible'. The bottom tabs have no testIDs; click by text (Clienti/Agenda/Video/Profilo for the trainer, Home/Agenda/Cibo/Profilo for the client). Running the pytest suite needs a real food image at /tmp/food.jpg (an unsplash pizza image was downloaded).",
+  "rca_of_issue": "IDOR: update_plan calls assert_access(user, body.client_id), which validates the payload client, not the plan being updated. Reproduce: trainer B registers client C2, then calls PUT /plans/<trainerA_plan_id> with client_id=C2. The plan is overwritten. Mitigation: fetch the plan first and call assert_access(user, plan['client_id'])."
+}

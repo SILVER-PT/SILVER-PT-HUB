@@ -1,0 +1,126 @@
+import { useState } from "react";
+import { Pressable, View } from "react-native";
+import { useRouter } from "expo-router";
+import Ionicons from "@react-native-vector-icons/ionicons";
+import { api, fmtDate, num, today, useFetch } from "@/src/api";
+import { Btn, Card, Chip, ChipRow, Empty, ErrorText, Field, H, Loading, Screen, Sheet, Stat, T } from "@/src/ui";
+import { useMediaPicker } from "@/src/media";
+import { useTheme } from "@/src/theme";
+
+export const MEALS = ["colazione", "pranzo", "cena", "spuntino"];
+const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
+
+export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: { clientId: string; tab?: boolean; readOnly?: boolean; title?: string }) {
+  const router = useRouter();
+  const { colors } = useTheme();
+  const [offset, setOffset] = useState(0);
+  const date = today(offset);
+  const { data, loading, reload } = useFetch<any[]>(`/meals?client_id=${clientId}&date=${date}`);
+  const [meal, setMeal] = useState("pranzo");
+  const [form, setForm] = useState<any | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const picker = useMediaPicker();
+
+  const tot = (data || []).reduce((a, m) => ({ kcal: a.kcal + m.kcal, protein: a.protein + m.protein, carbs: a.carbs + m.carbs, fat: a.fat + m.fat }), { kcal: 0, protein: 0, carbs: 0, fat: 0 });
+
+  const analyze = async () => {
+    setErr("");
+    const asset = await picker.pick("images", { base64: true });
+    if (!asset?.base64) return;
+    setAiBusy(true);
+    try {
+      const r = await api("/food/analyze", { method: "POST", body: { image_base64: asset.base64 } });
+      setForm({ name: r.name, kcal: String(r.kcal ?? 0), protein: String(r.protein ?? 0), carbs: String(r.carbs ?? 0), fat: String(r.fat ?? 0), grams: "", source: "ai",
+        info: `${(r.items || []).map((i: any) => `${i.name} ~${i.grams}g`).join(", ")} · affidabilità ${r.confidence || "—"}` });
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const save = async () => {
+    try {
+      await api("/meals", { method: "POST", body: { client_id: clientId, date, meal_type: meal, name: form.name || "Alimento", grams: num(form.grams) || null,
+        kcal: num(form.kcal), protein: num(form.protein), carbs: num(form.carbs), fat: num(form.fat), source: form.source } });
+      setForm(null);
+      reload();
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  };
+
+  const del = async (id: string) => {
+    await api(`/meals/${id}`, { method: "DELETE" });
+    reload();
+  };
+
+  const setF = (k: string) => (v: string) => setForm((p: any) => ({ ...p, [k]: v }));
+  const fv = (k: string) => (form?.[k] ?? "") as string;
+
+  return (
+    <Screen title={title} tab={tab} back={!tab}>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <Pressable testID="nutrition-prev-day" onPress={() => setOffset(offset - 1)} style={{ padding: 10 }}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <T testID="nutrition-date" style={{ fontWeight: "900", textTransform: "uppercase" }}>{offset === 0 ? "Oggi" : fmtDate(date)}</T>
+        <Pressable testID="nutrition-next-day" onPress={() => setOffset(offset + 1)} style={{ padding: 10 }}><Ionicons name="chevron-forward" size={22} color={colors.onSurface} /></Pressable>
+      </View>
+      <Card accent testID="nutrition-totals">
+        <T muted style={{ fontSize: 12, fontWeight: "700" }}>TOTALE GIORNATA</T>
+        <T testID="nutrition-total-kcal" style={{ fontSize: 34, fontWeight: "900", color: colors.brandPrimary }}>{Math.round(tot.kcal)} <T muted>kcal</T></T>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Stat label="Proteine" value={Math.round(tot.protein)} unit="g" />
+          <Stat label="Carbo" value={Math.round(tot.carbs)} unit="g" />
+          <Stat label="Grassi" value={Math.round(tot.fat)} unit="g" />
+        </View>
+      </Card>
+      {!readOnly && (
+        <>
+          <ChipRow>
+            {MEALS.map((m) => <Chip key={m} testID={`meal-type-${m}`} label={cap(m)} active={meal === m} onPress={() => setMeal(m)} />)}
+          </ChipRow>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Btn testID="scan-barcode-button" icon="barcode" title="Scansiona" style={{ flex: 1 }} onPress={() => router.push({ pathname: "/barcode", params: { date, meal } })} />
+            <Btn testID="ai-photo-button" icon="sparkles" variant="ghost" title="Foto AI" style={{ flex: 1 }} loading={aiBusy} onPress={analyze} />
+          </View>
+          <Btn testID="manual-food-button" icon="create" variant="dark" title="Inserisci a mano" onPress={() => setForm({ name: "", kcal: "", protein: "", carbs: "", fat: "", grams: "", source: "manual" })} />
+          {aiBusy ? <T muted>L&apos;AI sta analizzando il piatto…</T> : null}
+          <ErrorText text={err} />
+        </>
+      )}
+      {loading && !data ? <Loading /> : null}
+      {data?.length === 0 ? <Empty icon="restaurant-outline" text="Nessun alimento registrato in questa giornata." /> : null}
+      {MEALS.filter((m) => data?.some((x) => x.meal_type === m)).map((m) => (
+        <View key={m} style={{ gap: 8 }}>
+          <H>{cap(m)}</H>
+          {data!.filter((x) => x.meal_type === m).map((x) => (
+            <Card key={x.id} testID={`meal-item-${x.id}`} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <Ionicons name={x.source === "barcode" ? "barcode" : x.source === "ai" ? "sparkles" : "create"} size={18} color={colors.brandPrimary} />
+              <View style={{ flex: 1 }}>
+                <T style={{ fontWeight: "800" }} numberOfLines={1}>{x.name}{x.grams ? ` · ${x.grams}g` : ""}</T>
+                <T muted style={{ fontSize: 13 }}>{Math.round(x.kcal)} kcal · P {Math.round(x.protein)} · C {Math.round(x.carbs)} · G {Math.round(x.fat)}</T>
+              </View>
+              {!readOnly && <Pressable testID={`meal-delete-${x.id}`} onPress={() => del(x.id)} style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}><Ionicons name="trash-outline" size={20} color={colors.muted} /></Pressable>}
+            </Card>
+          ))}
+        </View>
+      ))}
+      {picker.element}
+      <Sheet visible={!!form} onClose={() => setForm(null)} title={form?.source === "ai" ? "Stima AI" : "Nuovo alimento"}>
+        {form?.info ? <T muted>{form.info}</T> : null}
+        <Field testID="food-name-input" label="Nome" value={fv("name")} onChangeText={setF("name")} />
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Field testID="food-grams-input" label="Grammi" keyboardType="decimal-pad" value={fv("grams")} onChangeText={setF("grams")} style={{ flex: 1 }} />
+          <Field testID="food-kcal-input" label="Kcal" keyboardType="decimal-pad" value={fv("kcal")} onChangeText={setF("kcal")} style={{ flex: 1 }} />
+        </View>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Field testID="food-protein-input" label="Prot g" keyboardType="decimal-pad" value={fv("protein")} onChangeText={setF("protein")} style={{ flex: 1 }} />
+          <Field testID="food-carbs-input" label="Carbo g" keyboardType="decimal-pad" value={fv("carbs")} onChangeText={setF("carbs")} style={{ flex: 1 }} />
+          <Field testID="food-fat-input" label="Grassi g" keyboardType="decimal-pad" value={fv("fat")} onChangeText={setF("fat")} style={{ flex: 1 }} />
+        </View>
+        <Btn testID="food-save-button" title={`Aggiungi a ${meal}`} onPress={save} />
+      </Sheet>
+    </Screen>
+  );
+}
