@@ -14,7 +14,7 @@ export default function Login() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const [mode, setMode] = useState<"login" | "register">("login");
-  const [role, setRole] = useState<"client" | "trainer">("client");
+  const [role, setRole] = useState<"client" | "trainer" | "nutritionist">("client");
   const [f, setF] = useState({ name: "", email: "", password: "", invite_code: "" });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -46,12 +46,13 @@ export default function Login() {
 
         {mode === "register" && (
           <>
-            <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
               <Chip testID="role-client-chip" label="Sono un cliente" active={role === "client"} onPress={() => setRole("client")} />
               <Chip testID="role-trainer-chip" label="Sono il coach" active={role === "trainer"} onPress={() => setRole("trainer")} />
+              <Chip testID="role-nutritionist-chip" label="Nutrizionista / Dietista" active={role === "nutritionist"} onPress={() => setRole("nutritionist")} />
             </View>
             <Field testID="register-name-input" label="Nome e cognome" value={f.name} onChangeText={set("name")} />
-            {role === "client" && (
+            {role !== "trainer" && (
               <Field testID="register-invite-input" label="Codice invito coach" autoCapitalize="characters" value={f.invite_code} onChangeText={set("invite_code")} />
             )}
           </>

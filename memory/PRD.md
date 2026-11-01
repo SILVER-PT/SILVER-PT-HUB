@@ -20,6 +20,13 @@ JWT email/password with roles (client registers with trainer invite code) · Ope
 - Nutrition: barcode (Open Food Facts), AI photo estimate (GPT-5.5), manual entry, daily totals
 - Italian decimal comma support
 
+## Implemented (2026-11) — batch 2
+- Calendar + time chips for appointments/measurement date; photo comparison of two dates
+- Visibility per client (measurements, photos, nutrition) default hidden — DCA-safe (no numbers, no meal plan shown)
+- Nutritionist role (invite code), assignment per client, targets + meal plan with grams, diary comments per day, staff can complete/edit logged foods, private team notes coach↔nutritionist
+- Subscription catalog (no end date, monthly/annual -15%), WhatsApp request, nutritionist tariffs, subscription assignment + video quota counter
+- Measurements editable; food history; plans history with approach + archive; profile photos; client Q&A to coach
+
 ## Backlog
 - P1: native date/time pickers, push reminders for appointments, photo side-by-side comparison
 - P1: meal delete confirmation, trainer macro targets per client

@@ -3,7 +3,8 @@ import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { api, fmtDate, num, today, useFetch } from "@/src/api";
-import { Btn, Card, Chip, ChipRow, Empty, ErrorText, Field, H, Loading, Screen, Sheet, Stat, T } from "@/src/ui";
+import { useAuth } from "@/src/auth";
+import { Bar, Btn, Card, Chip, ChipRow, Comments, Empty, ErrorText, Field, H, Loading, Screen, Sheet, Stat, T } from "@/src/ui";
 import { useMediaPicker } from "@/src/media";
 import { useTheme } from "@/src/theme";
 
@@ -13,16 +14,21 @@ const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: { clientId: string; tab?: boolean; readOnly?: boolean; title?: string }) {
   const router = useRouter();
   const { colors } = useTheme();
+  const { user } = useAuth();
+  const hide = user?.role === "client" && !user.visibility?.nutrition;
   const [offset, setOffset] = useState(0);
   const date = today(offset);
   const { data, loading, reload } = useFetch<any[]>(`/meals?client_id=${clientId}&date=${date}`);
+  const plan = useFetch<any>(`/clients/${clientId}/nutrition`);
+  const comments = useFetch<any[]>(`/diary/${clientId}/${date}/comments`);
+  const tg = plan.data?.targets || {};
   const [meal, setMeal] = useState("pranzo");
   const [form, setForm] = useState<any | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [err, setErr] = useState("");
   const picker = useMediaPicker();
 
-  const tot = (data || []).reduce((a, m) => ({ kcal: a.kcal + m.kcal, protein: a.protein + m.protein, carbs: a.carbs + m.carbs, fat: a.fat + m.fat }), { kcal: 0, protein: 0, carbs: 0, fat: 0 });
+  const tot = (data || []).reduce((a, m) => ({ kcal: a.kcal + (m.kcal || 0), protein: a.protein + (m.protein || 0), carbs: a.carbs + (m.carbs || 0), fat: a.fat + (m.fat || 0) }), { kcal: 0, protein: 0, carbs: 0, fat: 0 });
 
   const analyze = async () => {
     setErr("");
@@ -42,6 +48,12 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
 
   const save = async () => {
     try {
+      if (form.id) {
+        await api(`/meals/${form.id}`, { method: "PUT", body: { name: form.name, grams: num(form.grams) || null, kcal: num(form.kcal), protein: num(form.protein), carbs: num(form.carbs), fat: num(form.fat) } });
+        setForm(null);
+        reload();
+        return;
+      }
       await api("/meals", { method: "POST", body: { client_id: clientId, date, meal_type: meal, name: form.name || "Alimento", grams: num(form.grams) || null,
         kcal: num(form.kcal), protein: num(form.protein), carbs: num(form.carbs), fat: num(form.fat), source: form.source } });
       setForm(null);
@@ -66,15 +78,35 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
         <T testID="nutrition-date" style={{ fontWeight: "900", textTransform: "uppercase" }}>{offset === 0 ? "Oggi" : fmtDate(date)}</T>
         <Pressable testID="nutrition-next-day" onPress={() => setOffset(offset + 1)} style={{ padding: 10 }}><Ionicons name="chevron-forward" size={22} color={colors.onSurface} /></Pressable>
       </View>
-      <Card accent testID="nutrition-totals">
-        <T muted style={{ fontSize: 12, fontWeight: "700" }}>TOTALE GIORNATA</T>
-        <T testID="nutrition-total-kcal" style={{ fontSize: 34, fontWeight: "900", color: colors.brandPrimary }}>{Math.round(tot.kcal)} <T muted>kcal</T></T>
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <Stat label="Proteine" value={Math.round(tot.protein)} unit="g" />
-          <Stat label="Carbo" value={Math.round(tot.carbs)} unit="g" />
-          <Stat label="Grassi" value={Math.round(tot.fat)} unit="g" />
-        </View>
-      </Card>
+      {hide ? (
+        <Card accent testID="nutrition-diary-card">
+          <T style={{ fontWeight: "900" }}>Il tuo diario</T>
+          <T muted style={{ fontSize: 13 }}>Registra cosa mangi: scansiona, scatta una foto o scrivi il nome. Il tuo team si occupa del resto.</T>
+        </Card>
+      ) : (
+        <Card accent testID="nutrition-totals">
+          <T muted style={{ fontSize: 12, fontWeight: "700" }}>TOTALE GIORNATA</T>
+          <T testID="nutrition-total-kcal" style={{ fontSize: 34, fontWeight: "900", color: colors.brandPrimary }}>{Math.round(tot.kcal)} <T muted>{tg.kcal ? `/ ${Math.round(tg.kcal)} kcal` : "kcal"}</T></T>
+          {tg.kcal || tg.protein || tg.carbs || tg.fat ? (
+            <View style={{ gap: 10 }} testID="nutrition-target-bars">
+              {tg.kcal ? <Bar label="Calorie" value={tot.kcal} target={tg.kcal} unit="kcal" /> : null}
+              <Bar label="Proteine" value={tot.protein} target={tg.protein} />
+              <Bar label="Carboidrati" value={tot.carbs} target={tg.carbs} />
+              <Bar label="Grassi" value={tot.fat} target={tg.fat} />
+            </View>
+          ) : (
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Stat label="Proteine" value={Math.round(tot.protein)} unit="g" />
+              <Stat label="Carbo" value={Math.round(tot.carbs)} unit="g" />
+              <Stat label="Grassi" value={Math.round(tot.fat)} unit="g" />
+            </View>
+          )}
+        </Card>
+      )}
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <Btn testID="nutrition-plan-button" small variant="dark" icon="document-text" title={user?.role === "client" ? "Piano" : "Obiettivi e piano"} style={{ flex: 1 }} onPress={() => router.push(`/nutrition-plan/${clientId}`)} />
+        <Btn testID="food-history-button" small variant="dark" icon="time" title="Storico" style={{ flex: 1 }} onPress={() => router.push(`/food-history/${clientId}`)} />
+      </View>
       {!readOnly && (
         <>
           <ChipRow>
@@ -95,21 +127,25 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
         <View key={m} style={{ gap: 8 }}>
           <H>{cap(m)}</H>
           {data!.filter((x) => x.meal_type === m).map((x) => (
-            <Card key={x.id} testID={`meal-item-${x.id}`} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Card key={x.id} testID={`meal-item-${x.id}`} onPress={user?.role !== "client" ? () => setForm({ id: x.id, name: x.name, grams: x.grams ? String(x.grams) : "", kcal: String(x.kcal ?? ""), protein: String(x.protein ?? ""), carbs: String(x.carbs ?? ""), fat: String(x.fat ?? ""), source: x.source }) : undefined} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <Ionicons name={x.source === "barcode" ? "barcode" : x.source === "ai" ? "sparkles" : "create"} size={18} color={colors.brandPrimary} />
               <View style={{ flex: 1 }}>
-                <T style={{ fontWeight: "800" }} numberOfLines={1}>{x.name}{x.grams ? ` · ${x.grams}g` : ""}</T>
-                <T muted style={{ fontSize: 13 }}>{Math.round(x.kcal)} kcal · P {Math.round(x.protein)} · C {Math.round(x.carbs)} · G {Math.round(x.fat)}</T>
+                <T style={{ fontWeight: "800" }} numberOfLines={1}>{x.name}{!hide && x.grams ? ` · ${x.grams}g` : ""}</T>
+                {!hide ? <T muted style={{ fontSize: 13 }}>{Math.round(x.kcal)} kcal · P {Math.round(x.protein)} · C {Math.round(x.carbs)} · G {Math.round(x.fat)}</T> : null}
               </View>
               {!readOnly && <Pressable testID={`meal-delete-${x.id}`} onPress={() => del(x.id)} style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}><Ionicons name="trash-outline" size={20} color={colors.muted} /></Pressable>}
             </Card>
           ))}
         </View>
       ))}
+      {comments.data ? (
+        <Comments items={comments.data} onSend={async (text) => { await api(`/diary/${clientId}/${date}/comments`, { method: "POST", body: { text } }); comments.reload(); }} />
+      ) : null}
       {picker.element}
-      <Sheet visible={!!form} onClose={() => setForm(null)} title={form?.source === "ai" ? "Stima AI" : "Nuovo alimento"}>
-        {form?.info ? <T muted>{form.info}</T> : null}
+      <Sheet visible={!!form} onClose={() => setForm(null)} title={form?.id ? "Completa alimento" : form?.source === "ai" ? (hide ? "Piatto riconosciuto" : "Stima AI") : "Nuovo alimento"}>
+        {form?.info && !hide ? <T muted>{form.info}</T> : null}
         <Field testID="food-name-input" label="Nome" value={fv("name")} onChangeText={setF("name")} />
+        {!hide ? (<>
         <View style={{ flexDirection: "row", gap: 8 }}>
           <Field testID="food-grams-input" label="Grammi" keyboardType="decimal-pad" value={fv("grams")} onChangeText={setF("grams")} style={{ flex: 1 }} />
           <Field testID="food-kcal-input" label="Kcal" keyboardType="decimal-pad" value={fv("kcal")} onChangeText={setF("kcal")} style={{ flex: 1 }} />
@@ -119,7 +155,8 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
           <Field testID="food-carbs-input" label="Carbo g" keyboardType="decimal-pad" value={fv("carbs")} onChangeText={setF("carbs")} style={{ flex: 1 }} />
           <Field testID="food-fat-input" label="Grassi g" keyboardType="decimal-pad" value={fv("fat")} onChangeText={setF("fat")} style={{ flex: 1 }} />
         </View>
-        <Btn testID="food-save-button" title={`Aggiungi a ${meal}`} onPress={save} />
+        </>) : null}
+        <Btn testID="food-save-button" title={form?.id ? "Salva modifiche" : `Aggiungi a ${meal}`} onPress={save} />
       </Sheet>
     </Screen>
   );

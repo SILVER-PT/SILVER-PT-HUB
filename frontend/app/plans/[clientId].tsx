@@ -34,6 +34,7 @@ export default function Plans() {
             <T style={{ fontWeight: "900", fontSize: 18, flex: 1 }}>{p.name}</T>
             {trainer ? <Btn testID={`edit-plan-${p.id}`} small variant="dark" icon="create" title="Modifica" onPress={() => router.push({ pathname: "/plan-edit", params: { clientId, planId: p.id } })} /> : null}
           </View>
+          {p.approach || p.active === false ? <T muted style={{ fontSize: 12, fontWeight: "800" }}>{p.approach ? p.approach.toUpperCase() : ""}{p.active === false ? " · ARCHIVIATA" : ""}</T> : null}
           {p.notes ? <T muted>{p.notes}</T> : null}
           {p.days.map((d: any, i: number) => (
             <View key={i} style={{ gap: 4, marginTop: 8 }}>

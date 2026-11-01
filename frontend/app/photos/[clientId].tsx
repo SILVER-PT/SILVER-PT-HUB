@@ -4,7 +4,7 @@ import { Image } from "expo-image";
 import { useLocalSearchParams } from "expo-router";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { api, fileUrl, fmtDate, today, uploadFile, useFetch } from "@/src/api";
-import { Btn, Card, Empty, ErrorText, Field, H, Loading, Screen, Sheet, T } from "@/src/ui";
+import { Btn, Card, Chip, ChipRow, Empty, ErrorText, Field, H, Loading, Screen, Sheet, T } from "@/src/ui";
 import { useMediaPicker } from "@/src/media";
 import { makeStyles, useTheme } from "@/src/theme";
 
@@ -14,13 +14,14 @@ export default function Photos() {
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
   const s = useStyles();
   const { colors } = useTheme();
-  const { data, loading, reload } = useFetch<any[]>(`/photos?client_id=${clientId}`);
+  const { data, loading, reload, error } = useFetch<any[]>(`/photos?client_id=${clientId}`);
   const client = useFetch<any>(`/clients/${clientId}`);
   const picker = useMediaPicker();
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [preview, setPreview] = useState<any>(null);
   const [poseName, setPoseName] = useState("");
+  const [cmp, setCmp] = useState<{ a?: string; b?: string } | null>(null);
 
   const add = async (kind: string) => {
     setErr("");
@@ -62,8 +63,36 @@ export default function Photos() {
         ))}
       </View>
       <ErrorText text={err} />
-      {loading && !data ? <Loading /> : null}
+      {loading && !data && !error ? <Loading /> : null}
+      {error ? <Card testID="photos-hidden-card"><T muted>Foto caricate. Sono visibili solo al tuo coach.</T></Card> : null}
       {data && check.length === 0 ? <Empty icon="images-outline" text="Carica le 3 foto: frontale, laterale sinistra e posteriore." /> : null}
+      {dates.length >= 2 ? (
+        <Btn testID="compare-toggle-button" variant="ghost" icon="git-compare" title={cmp ? "Chiudi confronto" : "Confronta due date"} onPress={() => setCmp(cmp ? null : { a: dates[dates.length - 1], b: dates[0] })} />
+      ) : null}
+      {cmp ? (
+        <Card accent testID="compare-card">
+          <T muted>Prima</T>
+          <ChipRow>{dates.map((d) => <Chip key={d} testID={`compare-a-${d}`} label={fmtDate(d)} active={cmp.a === d} onPress={() => setCmp({ ...cmp, a: d })} />)}</ChipRow>
+          <T muted>Dopo</T>
+          <ChipRow>{dates.map((d) => <Chip key={d} testID={`compare-b-${d}`} label={fmtDate(d)} active={cmp.b === d} onPress={() => setCmp({ ...cmp, b: d })} />)}</ChipRow>
+          {KINDS.map(([k, l]) => {
+            const pa = check.find((p) => p.date === cmp.a && p.kind === k);
+            const pb = check.find((p) => p.date === cmp.b && p.kind === k);
+            return (
+              <View key={k} style={{ gap: 4 }}>
+                <T style={{ fontWeight: "800", fontSize: 13 }}>{l}</T>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  {[pa, pb].map((p, i) => (
+                    <View key={i} style={{ flex: 1 }}>
+                      {p ? <Image source={{ uri: fileUrl(p.path) }} style={s.cmpImg} contentFit="cover" /> : <View style={[s.cmpImg, { alignItems: "center", justifyContent: "center" }]}><T muted style={{ fontSize: 12 }}>—</T></View>}
+                    </View>
+                  ))}
+                </View>
+              </View>
+            );
+          })}
+        </Card>
+      ) : null}
       {dates.map((d) => (
         <Card key={d}>
           <T style={{ fontWeight: "900" }}>{fmtDate(d)}</T>
@@ -93,4 +122,5 @@ const useStyles = makeStyles((c) => ({
   thumbWrap: { width: "31%", gap: 4 },
   thumb: { width: "100%", aspectRatio: 3 / 4, borderRadius: 10, backgroundColor: c.surfaceTertiary },
   thumbLabel: { fontSize: 11, color: c.muted, textAlign: "center" },
+  cmpImg: { width: "100%", aspectRatio: 3 / 4, borderRadius: 10, backgroundColor: c.surfaceTertiary },
 }));

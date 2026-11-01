@@ -3,10 +3,11 @@ import { Pressable, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { api } from "@/src/api";
-import { Btn, Card, ErrorText, Field, Loading, Screen, T } from "@/src/ui";
+import { Btn, Card, Chip, ChipRow, ErrorText, Field, Loading, Screen, T, Toggle } from "@/src/ui";
 import { useTheme } from "@/src/theme";
 
 const newEx = () => ({ name: "", sets: "3", reps: "10", load: "", rir: "2", rest: "90s", notes: "" });
+const APPROACHES = ["Ipertrofia", "Forza", "Ricomposizione", "Dimagrimento", "Powerbuilding", "Contest prep", "Ricondizionamento"];
 
 export default function PlanEdit() {
   const { clientId, planId } = useLocalSearchParams<{ clientId: string; planId?: string }>();
@@ -28,7 +29,7 @@ export default function PlanEdit() {
     if (!plan.name.trim()) return setErr("Inserisci il nome della scheda");
     setBusy(true);
     try {
-      const body = { client_id: clientId, name: plan.name, notes: plan.notes, days: plan.days };
+      const body = { client_id: clientId, name: plan.name, notes: plan.notes, days: plan.days, approach: plan.approach || "", active: plan.active !== false };
       if (planId) await api(`/plans/${planId}`, { method: "PUT", body });
       else await api("/plans", { method: "POST", body });
       router.back();
@@ -43,6 +44,12 @@ export default function PlanEdit() {
     <Screen title={planId ? "Modifica scheda" : "Nuova scheda"} back>
       <Field testID="plan-name-input" label="Nome scheda" placeholder="es. Ipertrofia - Blocco 1" value={plan.name} onChangeText={(v) => upd((p) => { p.name = v; })} />
       <Field testID="plan-notes-input" label="Note" multiline value={plan.notes} onChangeText={(v) => upd((p) => { p.notes = v; })} />
+      <T muted>Approccio</T>
+      <ChipRow>
+        {APPROACHES.map((a) => <Chip key={a} testID={`approach-chip-${a}`} label={a} active={plan.approach === a} onPress={() => upd((p) => { p.approach = p.approach === a ? "" : a; })} />)}
+      </ChipRow>
+      <Field testID="plan-approach-input" placeholder="Oppure scrivi l'approccio (es. DUP, 5/3/1)" value={plan.approach || ""} onChangeText={(v) => upd((p) => { p.approach = v; })} />
+      <Toggle testID="plan-active-toggle" label="Scheda attiva" hint="Se disattivata resta nello storico ma il cliente non la vede in Home" value={plan.active !== false} onChange={(v) => upd((p) => { p.active = v; })} />
       {plan.days.map((d: any, di: number) => (
         <Card key={di} accent testID={`plan-day-${di}`}>
           <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>

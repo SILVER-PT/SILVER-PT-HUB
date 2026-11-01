@@ -3,18 +3,25 @@ import { useRouter } from "expo-router";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { makeStyles, useTheme } from "@/src/theme";
 
-export function ClientHub({ clientId, trainer }: { clientId: string; trainer?: boolean }) {
+export function ClientHub({ clientId, trainer, nutri, visibility }: { clientId: string; trainer?: boolean; nutri?: boolean; visibility?: Record<string, boolean> }) {
   const s = useStyles();
   const { colors } = useTheme();
   const router = useRouter();
-  const items = [
-    { key: "plans", label: "Schede", icon: "list", href: `/plans/${clientId}` },
-    { key: "progress", label: "Progressi", icon: "trending-up", href: `/progress/${clientId}` },
-    { key: "measurements", label: "Misure ISSA", icon: "body", href: `/measurements/${clientId}` },
-    { key: "photos", label: "Foto check", icon: "camera", href: `/photos/${clientId}` },
-    { key: "videos", label: "Video tecnica", icon: "videocam", href: `/videos/${clientId}` },
-    ...(trainer ? [{ key: "nutrition", label: "Alimentazione", icon: "nutrition", href: `/nutrition/${clientId}` }] : []),
+  const self = !trainer && !nutri;
+  const all = [
+    { key: "plans", label: "Schede", icon: "list", href: `/plans/${clientId}`, show: !nutri },
+    { key: "progress", label: "Progressi", icon: "trending-up", href: `/progress/${clientId}`, show: !nutri },
+    { key: "measurements", label: "Misure ISSA", icon: "body", href: `/measurements/${clientId}`, show: !self || !!visibility?.measurements },
+    { key: "photos", label: "Foto check", icon: "camera", href: `/photos/${clientId}`, show: !nutri },
+    { key: "videos", label: "Video tecnica", icon: "videocam", href: `/videos/${clientId}`, show: !nutri },
+    { key: "nutrition", label: "Diario cibo", icon: "nutrition", href: `/nutrition/${clientId}`, show: !self },
+    { key: "nutrition-plan", label: "Piano alimentare", icon: "document-text", href: `/nutrition-plan/${clientId}`, show: true },
+    { key: "food-history", label: "Storico alimenti", icon: "time", href: `/food-history/${clientId}`, show: !self },
+    { key: "packages", label: "Abbonamenti", icon: "pricetags", href: "/packages", show: self },
+    { key: "questions", label: "Chiedi al coach", icon: "chatbubbles", href: "/questions", show: self },
+    { key: "team-notes", label: "Note team", icon: "lock-closed", href: `/team-notes/${clientId}`, show: !!nutri },
   ];
+  const items = all.filter((i) => i.show);
   return (
     <View style={s.grid}>
       {items.map((it) => (

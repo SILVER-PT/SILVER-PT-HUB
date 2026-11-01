@@ -9,7 +9,8 @@ import { useRouter } from "expo-router";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { makeStyles, useTheme } from "@/src/theme";
 import { usesNativeTabs } from "@/src/navigation";
-import { fmtDate } from "@/src/api";
+import { fileUrl, fmtDate } from "@/src/api";
+import { Image } from "expo-image";
 
 export function Laser({ style }: { style?: StyleProp<ViewStyle> }) {
   const { colors } = useTheme();
@@ -229,8 +230,11 @@ export function Comments({ items, onSend }: { items: any[]; onSend: (t: string) 
       <H>Commenti</H>
       {items.length === 0 ? <T muted>Nessun commento ancora.</T> : null}
       {items.map((c) => (
-        <View key={c.id} style={[s.comment, c.author_role === "trainer" && { borderLeftColor: colors.brandPrimary }]}>
-          <Text style={s.commentAuthor}>{c.author_name}{c.author_role === "trainer" ? " · COACH" : ""}</Text>
+        <View key={c.id} style={[s.comment, c.author_role !== "client" && { borderLeftColor: colors.brandPrimary }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Avatar path={c.author_avatar} name={c.author_name} size={24} />
+            <Text style={s.commentAuthor}>{c.author_name}{c.author_role === "trainer" ? " · COACH" : c.author_role === "nutritionist" ? " · NUTRIZIONISTA" : ""}</Text>
+          </View>
           <T>{c.text}</T>
           <T muted style={{ fontSize: 12 }}>{fmtDate(c.created_at, true)}</T>
         </View>
@@ -252,6 +256,51 @@ export function Stat({ label, value, unit, testID }: { label: string; value: any
       <Text style={s.statValue}>{value ?? "—"}<Text style={s.statUnit}>{unit ? ` ${unit}` : ""}</Text></Text>
       <Text style={s.label}>{label}</Text>
     </View>
+  );
+}
+
+export function Avatar({ path, name, size = 44, testID }: { path?: string | null; name?: string; size?: number; testID?: string }) {
+  const { colors } = useTheme();
+  return (
+    <View testID={testID} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colors.brandTertiary, borderWidth: 1, borderColor: colors.brandPrimary, alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+      {path ? (
+        <Image source={{ uri: fileUrl(path) }} style={{ width: size, height: size }} contentFit="cover" />
+      ) : (
+        <Text style={{ color: colors.onBrandTertiary, fontWeight: "900", fontSize: size * 0.4 }}>{(name || "?").slice(0, 1).toUpperCase()}</Text>
+      )}
+    </View>
+  );
+}
+
+export function Bar({ label, value, target, unit = "g", testID }: { label: string; value: number; target?: number; unit?: string; testID?: string }) {
+  const { colors } = useTheme();
+  const pct = target ? Math.min(value / target, 1) : 0;
+  const over = !!target && value > target * 1.05;
+  return (
+    <View style={{ gap: 4 }} testID={testID}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+        <Text style={{ color: colors.onSurfaceSecondary, fontWeight: "700", fontSize: 13 }}>{label}</Text>
+        <Text style={{ color: over ? colors.warning : colors.muted, fontSize: 13, fontWeight: "700" }}>{Math.round(value)}{target ? ` / ${Math.round(target)}` : ""} {unit}</Text>
+      </View>
+      <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.surfaceTertiary, overflow: "hidden" }}>
+        <View style={{ width: `${pct * 100}%`, height: 8, borderRadius: 4, backgroundColor: over ? colors.warning : colors.brandPrimary }} />
+      </View>
+    </View>
+  );
+}
+
+export function Toggle({ label, value, onChange, testID, hint }: { label: string; value: boolean; onChange: (v: boolean) => void; testID?: string; hint?: string }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable testID={testID} onPress={() => onChange(!value)} style={{ flexDirection: "row", alignItems: "center", gap: 12, minHeight: 48 }}>
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: colors.onSurface, fontWeight: "700", fontSize: 15 }}>{label}</Text>
+        {hint ? <Text style={{ color: colors.muted, fontSize: 12 }}>{hint}</Text> : null}
+      </View>
+      <View style={{ width: 48, height: 28, borderRadius: 14, padding: 3, backgroundColor: value ? colors.brandPrimary : colors.surfaceTertiary, borderWidth: 1, borderColor: value ? colors.brandPrimary : colors.border }}>
+        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.onBrandPrimary, transform: [{ translateX: value ? 20 : 0 }] }} />
+      </View>
+    </Pressable>
   );
 }
 

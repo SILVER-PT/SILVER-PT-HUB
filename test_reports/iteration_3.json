@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 3 tested the new SILVER-PT feature batch (backend and Expo web UI at 390x844). Backend: 21 new pytest tests in test_silverpt_features_v3.py, all passing. The 18 regression tests in test_silverpt_api.py also pass, after 2 test-side fixes (food.jpg fixture missing; jp3 test now lists measurements as trainer because client visibility is OFF by default). Permission rules verified: client gets 403 on hidden measurements and photos; meals and meal history have kcal/macros/grams stripped when nutrition is hidden; nutritionist sees only assigned clients (403 otherwise); team notes are staff-only (403 for client); only the owner can edit or delete a package (404 for others); the client cannot change settings or the nutrition plan. Frontend tested: trainer (home Domande/Storico/Listino, plans history with approach filters, packages, client detail visibility toggles, nutritionist and subscription chips, team notes, agenda calendar with day-N and time-chip-HHMM creating the right appointment, measurement edit with prefilled values and calendar date saving correctly, photo comparison A/B, plan-edit approach chips and active toggle); client (measurements tile hidden, nutrition hidden mode with name-only entry and no numbers, packages with a working WhatsApp link, annual -15%, question create and detail, avatar change button); nutritionist (Clienti and Profilo tabs only, client hub, plan editor saves targets, target bars in diary, diary comment, staff whatsapp/bio, packages button). No red screens and no page errors. Deprecated packages detected: none.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/clients/{id}/nutrition", "issue": "For a client with nutrition hidden (DCA), only targets are stripped. The meal_plan text with grams (e.g. '80g avena') is still returned and shown. Product decision: keep or hide grams in hidden mode."},
+      {"endpoint": "PUT /api/meals/{id} (missing)", "issue": "In hidden mode a client logs foods by name only (0 kcal). Staff cannot edit a meal to add grams or macros afterwards, so daily totals and target bars stay at 0 for DCA clients. Nutritionist POST/DELETE /meals also returns 403 because trainer_of/assert_access is called without allow_nutri."},
+      {"endpoint": "PUT /api/clients/{id}/settings", "issue": "subscription is an arbitrary dict. package_id is not checked to exist or to belong to the team."},
+      {"endpoint": "GET /api/packages", "issue": "Default seeding uses check-then-insert_many. Concurrent first calls (the client detail and home screens both fetch it) could seed duplicates. Use an upsert or a unique key/lock."},
+      {"endpoint": "GET /api/plans", "issue": "Archived plans (active=false) are still returned to the client. They are only filtered on the client side in the Home screen."},
+      {"endpoint": "PUT /api/me", "issue": "avatar and staff are not validated: any string, any keys. PUT {avatar:''} stores an empty string instead of removing it."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Client Home plan card", "issue": "A plan with an empty name and no days renders as a blank card (no title fallback).", "testID": "plan-card-*", "priority": "low"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Trainer Home", "issues": ["'DOMANDE (1)' label wraps onto 2 lines in the quick-action row at 390px width"]},
+      {"screen": "Profile", "issues": ["Birth date is still a free-text AAAA-MM-GG input. Consider reusing the new DatePicker for consistency."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_silverpt_features_v3.py", "/app/backend/tests/test_silverpt_api.py", "/app/test_reports/pytest/pytest_v3.xml"],
+  "action_items": [
+    "Decide whether meal_plan grams should be hidden from clients with nutrition visibility OFF (GET /clients/{id}/nutrition plus the nutrition-plan screen for clients).",
+    "Add PUT /api/meals/{id} (staff) so a coach or nutritionist can complete name-only meals logged in hidden mode. Allow the nutritionist on meal create/delete if intended.",
+    "Validate subscription.package_id in PUT /clients/{id}/settings.",
+    "Make the default package seeding idempotent under concurrency.",
+    "Optional: filter archived plans server-side for clients; add a title fallback for unnamed plans on the client Home card.",
+    "Code review: server.py is 1080 lines (>700). Split it into routers (auth, clients, nutrition, packages, questions, media)."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1080 lines. Split it into modules.",
+    "assert_access(allow_nutri=False) is the default in owner_ids/trainer_of. This is good for least privilege, but the nutritionist cannot add meals for assigned clients.",
+    "Hidden-mode logic for the client UI reads user.visibility from the auth context. It is refreshed only on Home focus (useFocusEffect refresh), so a toggle change applies after the client returns to Home."
+  ],
+  "updated_files": ["/app/backend/tests/test_silverpt_features_v3.py (new)", "/app/backend/tests/test_silverpt_api.py (jp3 test lists measurements as trainer)"],
+  "success_rate": {"backend": "100% (39/39)", "frontend": "100% of tested flows (minor issues only)"},
+  "seed_data_creation": "Temporary TEST_ data (TEST_Other clients, plan, measurement, meals, questions, comments, an extra check photo dated 2026-01-20, appointment, package) was created and then removed via Mongo. Restored: client visibility (all OFF), nutritionist_id, subscription None, avatar unset, nutrition plan (2200 kcal / 160 g protein, Colazione '80g avena'), edited measurement (79 kg, 2026-11-01), trainer staff.whatsapp unset. The cleanup also deleted older TEST_Other users and TEST_ questions/comments from previous iterations.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The client cliente@silverpt.it has all visibility OFF by default, so as the client, measurements and photos return 403; use the trainer token to list them. /tmp/food.jpg must exist for the AI/upload regression tests (download any food jpg). The server clock reads 2026-11, so the UI shows Nov dates. The nutritionist (nutri@silverpt.it) is assigned to Marco Rossi (id 6ae7273ec8f277d3e820ac37). The WhatsApp request opens api.whatsapp.com/send?phone=... (wa.me redirect) only when the owner has staff.whatsapp set.",
+  "rca_of_issue": ""
+}

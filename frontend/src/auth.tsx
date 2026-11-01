@@ -5,9 +5,14 @@ export type User = {
   id: string;
   email: string;
   name: string;
-  role: "trainer" | "client";
+  role: "trainer" | "client" | "nutritionist";
   invite_code?: string;
   trainer_id?: string;
+  avatar?: string;
+  visibility?: { measurements?: boolean; photos?: boolean; nutrition?: boolean };
+  nutritionist_id?: string;
+  subscription?: Record<string, any> | null;
+  staff?: { whatsapp?: string; bio?: string; title?: string };
   profile?: Record<string, any>;
 };
 

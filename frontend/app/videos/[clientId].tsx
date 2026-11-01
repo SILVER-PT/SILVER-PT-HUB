@@ -12,6 +12,11 @@ export default function Videos() {
   const router = useRouter();
   const { colors } = useTheme();
   const { data, loading, reload } = useFetch<any[]>(`/videos?client_id=${clientId}`);
+  const client = useFetch<any>(`/clients/${clientId}`);
+  const sub = client.data?.subscription;
+  const limit = sub?.video_limit || 0;
+  const period = sub?.billing === "annuale" ? new Date().toISOString().slice(0, 4) : new Date().toISOString().slice(0, 7);
+  const used = (data || []).filter((v) => v.created_at.startsWith(period)).length;
   const picker = useMediaPicker();
   const [exercise, setExercise] = useState("");
   const [note, setNote] = useState("");
@@ -41,6 +46,7 @@ export default function Videos() {
     <Screen title="Video tecnica" back>
       <Card accent>
         <H>Carica esecuzione</H>
+        {limit ? <T testID="video-quota-text" style={{ color: used >= limit ? colors.warning : colors.silver, fontWeight: "800", fontSize: 13 }}>Video check usati: {used}/{limit} {sub.billing === "annuale" ? "quest'anno" : "questo mese"}</T> : null}
         <Field testID="video-exercise-input" label="Esercizio" placeholder="es. Squat 100kg x5" value={exercise} onChangeText={setExercise} />
         <Field testID="video-note-input" label="Nota per il coach" value={note} onChangeText={setNote} />
         <ErrorText text={err} />

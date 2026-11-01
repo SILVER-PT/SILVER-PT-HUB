@@ -11,18 +11,19 @@ export default function TabsLayout() {
   const { colors } = useTheme();
   if (!user) return <Redirect href="/login" />;
   const trainer = user.role === "trainer";
+  const nutri = user.role === "nutritionist";
   const tabs = [
-    { name: "index", label: trainer ? "Clienti" : "Home", icon: trainer ? "people" : "barbell", sf: trainer ? "person.2.fill" : "dumbbell.fill" },
-    { name: "agenda", label: "Agenda", icon: "calendar", sf: "calendar" },
-    { name: "feed", label: trainer ? "Video" : "Cibo", icon: trainer ? "videocam" : "nutrition", sf: trainer ? "video.fill" : "fork.knife" },
-    { name: "profile", label: "Profilo", icon: "person-circle", sf: "person.crop.circle.fill" },
+    { name: "index", label: trainer || nutri ? "Clienti" : "Home", icon: trainer || nutri ? "people" : "barbell", sf: trainer || nutri ? "person.2.fill" : "dumbbell.fill", hidden: false },
+    { name: "agenda", label: "Agenda", icon: "calendar", sf: "calendar", hidden: nutri },
+    { name: "feed", label: trainer ? "Video" : "Cibo", icon: trainer ? "videocam" : "nutrition", sf: trainer ? "video.fill" : "fork.knife", hidden: nutri },
+    { name: "profile", label: "Profilo", icon: "person-circle", sf: "person.crop.circle.fill", hidden: false },
   ];
 
   if (usesNativeTabs) {
     return (
       <NativeTabs tintColor={colors.brandPrimary}>
         {tabs.map((t) => (
-          <NativeTabs.Trigger key={t.name} name={t.name}>
+          <NativeTabs.Trigger key={t.name} name={t.name} hidden={t.hidden}>
             <NativeTabs.Trigger.Icon sf={t.sf as any} />
             <NativeTabs.Trigger.Label>{t.label}</NativeTabs.Trigger.Label>
           </NativeTabs.Trigger>
@@ -53,6 +54,7 @@ export default function TabsLayout() {
           name={t.name}
           options={{
             title: t.label,
+            href: t.hidden ? null : undefined,
             tabBarButtonTestID: `tab-${t.name}`,
             tabBarIcon: ({ color, size }) => <Ionicons name={t.icon as any} size={size} color={color} />,
           }}

@@ -124,7 +124,7 @@ class TestMeasurements:
         assert m["method"] == "Jackson-Pollock 3 pliche" and m["sum_folds"] == 45
         assert 10 < m["body_fat"] < 16, m["body_fat"]
         assert m["bmi"] == 24.7 and abs(m["fat_mass"] + m["lean_mass"] - 80) < 0.2
-        lst = requests.get(f"{BASE}/measurements", params={"client_id": ctx["cid"]}, headers=H(ctx["c"])).json()
+        lst = requests.get(f"{BASE}/measurements", params={"client_id": ctx["cid"]}, headers=H(ctx["t"])).json()  # trainer: client measurements hidden by default since v3
         assert any(x["id"] == m["id"] for x in lst)
         ctx.setdefault("mids", []).append(m["id"])
 

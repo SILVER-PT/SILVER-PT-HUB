@@ -5,6 +5,7 @@ import { useAuth } from "@/src/auth";
 import { api, fmtDate, today, useFetch } from "@/src/api";
 import { Btn, Card, Chip, ChipRow, Empty, ErrorText, Field, H, Loading, Screen, Sheet, T } from "@/src/ui";
 import { useTheme } from "@/src/theme";
+import { DatePicker, TimePicker } from "@/src/calendar";
 
 export const STATUS: Record<string, string> = { requested: "Richiesto", confirmed: "Confermato", cancelled: "Annullato", done: "Completato" };
 
@@ -72,10 +73,10 @@ export default function Agenda() {
           </>
         ) : null}
         <Field testID="appointment-title-input" label="Titolo" value={f.title} onChangeText={set("title")} />
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <Field testID="appointment-date-input" label="Data (AAAA-MM-GG)" value={f.date} onChangeText={set("date")} style={{ flex: 1 }} />
-          <Field testID="appointment-time-input" label="Ora" value={f.time} onChangeText={set("time")} style={{ width: 100 }} />
-        </View>
+        <T muted>Data</T>
+        <DatePicker testID="appointment-date" value={f.date} onChange={set("date")} />
+        <T muted>Ora · {f.time}</T>
+        <TimePicker value={f.time} onChange={set("time")} />
         <View style={{ flexDirection: "row", gap: 8 }}>
           <Field testID="appointment-duration-input" label="Durata (min)" keyboardType="numeric" value={f.duration_min} onChangeText={set("duration_min")} style={{ width: 120 }} />
           <Field testID="appointment-location-input" label="Luogo" value={f.location} onChangeText={set("location")} style={{ flex: 1 }} />

@@ -4,11 +4,14 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { api, num } from "@/src/api";
+import { useAuth } from "@/src/auth";
 import { Btn, Card, ErrorText, Field, Screen, Stat, T } from "@/src/ui";
 
 export default function Barcode() {
   const { date, meal } = useLocalSearchParams<{ date: string; meal: string }>();
   const router = useRouter();
+  const { user } = useAuth();
+  const hide = user?.role === "client" && !user.visibility?.nutrition;
   const [perm, requestPerm] = useCameraPermissions();
   const [code, setCode] = useState("");
   const [product, setProduct] = useState<any>(null);
@@ -87,16 +90,20 @@ export default function Barcode() {
             {product.image ? <Image source={{ uri: product.image }} style={{ width: 64, height: 64, borderRadius: 8 }} contentFit="cover" /> : null}
             <View style={{ flex: 1 }}>
               <T testID="barcode-product-name" style={{ fontWeight: "900" }}>{product.name}</T>
-              <T muted>{product.brand} · {product.per100.kcal} kcal/100g</T>
+              <T muted>{product.brand}{hide ? "" : ` · ${product.per100.kcal} kcal/100g`}</T>
             </View>
           </View>
-          <Field testID="barcode-grams-input" label="Quantità (g)" keyboardType="decimal-pad" value={grams} onChangeText={setGrams} />
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <Stat label="Kcal" value={Math.round(m("kcal"))} />
-            <Stat label="Prot" value={m("protein")} />
-            <Stat label="Carb" value={m("carbs")} />
-            <Stat label="Gras" value={m("fat")} />
-          </View>
+          {!hide ? (
+            <>
+              <Field testID="barcode-grams-input" label="Quantità (g)" keyboardType="decimal-pad" value={grams} onChangeText={setGrams} />
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <Stat label="Kcal" value={Math.round(m("kcal"))} />
+                <Stat label="Prot" value={m("protein")} />
+                <Stat label="Carb" value={m("carbs")} />
+                <Stat label="Gras" value={m("fat")} />
+              </View>
+            </>
+          ) : null}
           <Btn testID="barcode-save-button" title={`Aggiungi a ${meal}`} loading={busy} onPress={save} />
           <Btn testID="barcode-rescan-button" variant="ghost" title="Scansiona un altro" onPress={() => { setProduct(null); setCode(""); lock.current = false; }} />
         </Card>
