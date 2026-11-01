@@ -6,6 +6,7 @@ import { useAuth } from "@/src/auth";
 import { api, uploadFile } from "@/src/api";
 import { Avatar, Btn, Card, Chip, ErrorText, Field, H, Screen, T } from "@/src/ui";
 import { useMediaPicker } from "@/src/media";
+import { DatePicker } from "@/src/calendar";
 import { useTheme } from "@/src/theme";
 
 export const EMPTY_PROFILE = { sex: "M", birth_date: "", height: "", phone: "", goal: "", competitor: false, category: "", injuries: "", notes: "" };
@@ -15,6 +16,7 @@ export function ProfileForm({ clientId, initial, name: initialName, onSaved }: {
   const [name, setName] = useState(initialName);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [birthOpen, setBirthOpen] = useState(false);
   const { colors } = useTheme();
   useEffect(() => setP({ ...EMPTY_PROFILE, ...(initial || {}) }), [initial]);
   const set = (k: string) => (v: any) => setP((x: any) => ({ ...x, [k]: v }));
@@ -38,10 +40,17 @@ export function ProfileForm({ clientId, initial, name: initialName, onSaved }: {
         <Chip testID="profile-sex-m" label="Uomo" active={p.sex === "M"} onPress={() => set("sex")("M")} />
         <Chip testID="profile-sex-f" label="Donna" active={p.sex === "F"} onPress={() => set("sex")("F")} />
       </View>
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        <Field testID="profile-birth-input" label="Nascita (AAAA-MM-GG)" value={p.birth_date} onChangeText={set("birth_date")} style={{ flex: 1 }} />
+      <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>
+        <Pressable testID="profile-birth-button" onPress={() => setBirthOpen(!birthOpen)} style={{ flex: 1, gap: 6 }}>
+          <T muted style={{ fontSize: 12, fontWeight: "700", letterSpacing: 1 }}>DATA DI NASCITA</T>
+          <View style={{ minHeight: 48, borderRadius: 10, borderWidth: 1, borderColor: birthOpen ? colors.borderStrong : colors.border, backgroundColor: colors.surfaceTertiary, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Ionicons name="calendar" size={18} color={colors.brandPrimary} />
+            <T testID="profile-birth-value">{p.birth_date ? new Date(p.birth_date + "T12:00:00").toLocaleDateString("it-IT") : "Seleziona"}</T>
+          </View>
+        </Pressable>
         <Field testID="profile-height-input" label="Altezza cm" keyboardType="decimal-pad" value={String(p.height)} onChangeText={set("height")} style={{ width: 110 }} />
       </View>
+      {birthOpen ? <DatePicker yearNav testID="birth-date" value={p.birth_date || "1990-01-01"} onChange={(v) => { set("birth_date")(v); setBirthOpen(false); }} /> : null}
       <Field testID="profile-phone-input" label="Telefono" keyboardType="phone-pad" value={p.phone} onChangeText={set("phone")} />
       <Field testID="profile-goal-input" label="Obiettivo" value={p.goal} onChangeText={set("goal")} />
       <Field testID="profile-injuries-input" label="Infortuni / patologie" value={p.injuries} onChangeText={set("injuries")} />
@@ -50,7 +59,7 @@ export function ProfileForm({ clientId, initial, name: initialName, onSaved }: {
       </View>
       {p.competitor ? <Field testID="profile-category-input" label="Categoria (es. Men's Physique, Classic)" value={p.category} onChangeText={set("category")} /> : null}
       <Field testID="profile-notes-input" label="Note" multiline value={p.notes} onChangeText={set("notes")} />
-      {msg ? <T testID="profile-save-message" style={{ color: colors.success }}>{msg}</T> : null}
+      {msg ? <T testID="profile-save-message" style={{ color: msg === "Profilo salvato" ? colors.success : colors.error }}>{msg}</T> : null}
       <Btn testID="profile-save-button" title="Salva profilo" loading={busy} onPress={save} />
     </View>
   );

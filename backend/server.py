@@ -274,6 +274,7 @@ async def client_settings(client_id: str, body: SettingsIn, user=Depends(require
             pk = await db.packages.find_one({"_id": oid(str(body.subscription.get("package_id", ""))), "team_id": str(user["_id"])})
             if not pk:
                 raise HTTPException(404, "Pacchetto non trovato")
+            body.subscription["chat"] = any("chat" in f.lower() for f in pk.get("features", []))
         upd["subscription"] = body.subscription or None
     if upd:
         await db.users.update_one({"_id": oid(client_id)}, {"$set": upd})
@@ -472,6 +473,18 @@ async def update_measurement(mid: str, body: MeasurementIn, user=Depends(current
         doc.setdefault(k, None)
     await db.measurements.update_one({"_id": oid(mid)}, {"$set": doc})
     return ser(await db.measurements.find_one({"_id": oid(mid)}))
+
+
+@api.delete("/measurements/{mid}")
+async def delete_measurement(mid: str, user=Depends(current_user)):
+    m = await db.measurements.find_one({"_id": oid(mid)})
+    if not m:
+        raise HTTPException(404, "Misurazione non trovata")
+    c = await assert_access(user, m["client_id"])
+    if user["role"] == "client" and not visible(c, "measurements"):
+        raise HTTPException(403, "Le misure sono gestite dal coach")
+    await db.measurements.delete_one({"_id": oid(mid)})
+    return {"ok": True}
 
 
 @api.get("/measurements")
@@ -1039,6 +1052,51 @@ async def delete_package(pid: str, user=Depends(require_staff)):
     await own_package(pid, user)
     await db.packages.delete_one({"_id": oid(pid)})
     return {"ok": True}
+
+
+# ---------- coach chat (annual full coaching only) ----------
+async def chat_access(user: dict, client_id: str) -> dict:
+    c = await assert_access(user, client_id)
+    if not (c.get("subscription") or {}).get("chat"):
+        raise HTTPException(403, "La chat è inclusa nel Coaching completo annuale")
+    return c
+
+
+@api.get("/chat/{client_id}")
+async def chat_messages(client_id: str, after: Optional[str] = None, user=Depends(current_user)):
+    await chat_access(user, client_id)
+    f = {"client_id": client_id}
+    if after:
+        f["created_at"] = {"$gt": after}
+    docs = await db.chat.find(f).sort("created_at", 1).to_list(1000)
+    other = "client" if user["role"] == "trainer" else "trainer"
+    await db.chat.update_many({"client_id": client_id, "author_role": other, "read": False}, {"$set": {"read": True}})
+    return [ser(d) for d in docs]
+
+
+@api.post("/chat/{client_id}")
+async def chat_send(client_id: str, body: CommentIn, user=Depends(current_user)):
+    await chat_access(user, client_id)
+    if not body.text.strip():
+        raise HTTPException(400, "Messaggio vuoto")
+    doc = {"client_id": client_id, "author_id": str(user["_id"]), "author_name": user["name"], "author_role": user["role"],
+           "text": body.text.strip()[:4000], "read": False, "created_at": now_iso()}
+    await db.chat.insert_one(doc)
+    return ser(doc)
+
+
+@api.get("/chat-unread")
+async def chat_unread(user=Depends(current_user)):
+    """Unread counts per client for the trainer, or for the client itself."""
+    if user["role"] == "trainer":
+        ids = [str(u["_id"]) for u in await db.users.find({"trainer_id": str(user["_id"]), "role": "client"}, {"_id": 1}).to_list(1000)]
+        f = {"client_id": {"$in": ids}, "author_role": "client", "read": False}
+    else:
+        f = {"client_id": str(user["_id"]), "author_role": "trainer", "read": False}
+    out: dict = {}
+    async for d in db.chat.find(f, {"client_id": 1}):
+        out[d["client_id"]] = out.get(d["client_id"], 0) + 1
+    return out
 
 
 # ---------- questions (client -> coach) ----------

@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { makeStyles, useTheme } from "@/src/theme";
 
-export function ClientHub({ clientId, trainer, nutri, visibility }: { clientId: string; trainer?: boolean; nutri?: boolean; visibility?: Record<string, boolean> }) {
+export function ClientHub({ clientId, trainer, nutri, visibility, chat }: { clientId: string; trainer?: boolean; nutri?: boolean; visibility?: Record<string, boolean>; chat?: boolean }) {
   const s = useStyles();
   const { colors } = useTheme();
   const router = useRouter();
@@ -18,6 +18,7 @@ export function ClientHub({ clientId, trainer, nutri, visibility }: { clientId: 
     { key: "nutrition-plan", label: "Piano alimentare", icon: "document-text", href: `/nutrition-plan/${clientId}`, show: true },
     { key: "food-history", label: "Storico alimenti", icon: "time", href: `/food-history/${clientId}`, show: !self },
     { key: "packages", label: "Abbonamenti", icon: "pricetags", href: "/packages", show: self },
+    { key: "chat", label: "Chat coaching", icon: "chatbubble-ellipses", href: `/chat/${clientId}`, show: !nutri && !!chat },
     { key: "questions", label: "Chiedi al coach", icon: "chatbubbles", href: "/questions", show: self },
     { key: "team-notes", label: "Note team", icon: "lock-closed", href: `/team-notes/${clientId}`, show: !!nutri },
   ];

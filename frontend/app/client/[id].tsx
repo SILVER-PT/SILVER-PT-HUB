@@ -2,7 +2,8 @@ import { useState } from "react";
 import { View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useFetch } from "@/src/api";
-import { Avatar, Btn, Card, H, Loading, Screen, T } from "@/src/ui";
+import { Avatar, Btn, Card, ErrorText, H, Loading, Screen, T } from "@/src/ui";
+import { shareReport } from "@/src/report";
 import { ClientHub } from "@/src/client-hub";
 import { ClientSettings } from "@/src/client-settings";
 import { useAuth } from "@/src/auth";
@@ -16,6 +17,19 @@ export default function ClientDetail() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const trainer = user?.role === "trainer";
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfErr, setPdfErr] = useState("");
+  const makePdf = async () => {
+    setPdfBusy(true);
+    setPdfErr("");
+    try {
+      await shareReport(id);
+    } catch (e: any) {
+      setPdfErr(e.message || "Impossibile creare il PDF");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
   const { data: c, reload } = useFetch<any>(`/clients/${id}`);
   const [edit, setEdit] = useState(false);
   if (!c) return <Screen title="Cliente" back><Loading /></Screen>;
@@ -40,7 +54,9 @@ export default function ClientDetail() {
         {p.competitor ? <T style={{ color: colors.brandPrimary, fontWeight: "800" }}>ATLETA BODYBUILDING{p.category ? ` · ${p.category}` : ""}</T> : null}
         {c.subscription ? <T muted style={{ fontSize: 13 }}>Abbonamento: {c.subscription.name} · {c.subscription.billing}</T> : null}
       </Card>
-      <ClientHub clientId={id} trainer={trainer} nutri={!trainer} />
+      <ClientHub clientId={id} trainer={trainer} nutri={!trainer} chat={!!c.subscription?.chat} />
+      {trainer ? <Btn testID="report-pdf-button" icon="document" variant="ghost" title="Report progressi PDF" loading={pdfBusy} onPress={makePdf} /> : null}
+      <ErrorText text={pdfErr} />
       {trainer ? <ClientSettings client={c} onChange={reload} /> : null}
       {trainer ? <H right={<Btn testID="client-edit-profile-button" small variant="dark" title={edit ? "Chiudi" : "Modifica"} onPress={() => setEdit(!edit)} />}>Profilo</H> : null}
       {edit && trainer ? <ProfileForm clientId={id} initial={c.profile} name={c.name} onSaved={() => { reload(); setEdit(false); }} /> : null}

@@ -63,7 +63,8 @@
           "cameraPermission": "Scansiona codici a barre degli alimenti",
           "recordAudioAndroid": true
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true

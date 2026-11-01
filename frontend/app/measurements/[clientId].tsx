@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { api, fmtDate, num, today, useFetch } from "@/src/api";
 import { Btn, Card, Empty, ErrorText, Field, H, Loading, Screen, Sheet, Stat, T } from "@/src/ui";
 import { useTheme } from "@/src/theme";
@@ -22,6 +22,7 @@ function Grid({ items, values, onChange, prefix }: { items: string[][]; values: 
 
 export default function Measurements() {
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
+  const router = useRouter();
   const { colors } = useTheme();
   const { data, loading, reload, error } = useFetch<any[]>(`/measurements?client_id=${clientId}`);
   const client = useFetch<any>(`/clients/${clientId}`);
@@ -29,6 +30,7 @@ export default function Measurements() {
   const canEdit = user?.role === "trainer" || (user?.role === "client" && !!user.visibility?.measurements);
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+  const [confirmDel, setConfirmDel] = useState(false);
   const [f, setF] = useState<any>({ date: today(), weight: "", height: "", circumferences: {}, skinfolds: {}, notes: "" });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -65,9 +67,21 @@ export default function Measurements() {
 
   const noAge = !client.data?.profile?.birth_date;
 
+  const remove = async () => {
+    setConfirmDel(false);
+    try {
+      await api(`/measurements/${editId}`, { method: "DELETE" });
+      setOpen(false);
+      reload();
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  };
+
   return (
     <Screen title="Misure ISSA" back right={canEdit ? <Btn testID="new-measurement-button" small icon="add" title="Nuova" onPress={openNew} /> : null}>
       {error ? <Empty icon="lock-closed-outline" text={error} /> : null}
+      {data && data.length > 1 ? <Btn testID="measurements-charts-button" variant="ghost" icon="stats-chart" title="Grafici misure" onPress={() => router.push(`/progress/${clientId}`)} /> : null}
       {noAge && !error ? <Card><T muted>Per il calcolo della % di grasso (Jackson-Pollock + Siri) inserisci sesso e data di nascita nel profilo.</T></Card> : null}
       {loading && !data ? <Loading /> : null}
       {data?.length === 0 ? <Empty icon="body-outline" text="Nessuna misurazione registrata." /> : null}
@@ -114,6 +128,7 @@ export default function Measurements() {
         <Field testID="measure-notes-input" label="Note" multiline value={f.notes} onChangeText={(v) => setF({ ...f, notes: v })} />
         <ErrorText text={err} />
         <Btn testID="measure-save-button" title="Salva misurazione" loading={busy} onPress={save} />
+        {editId ? <Btn testID="measure-delete-button" variant="ghost" icon="trash" title={confirmDel ? "Tocca di nuovo per confermare" : "Elimina misurazione"} onPress={() => (confirmDel ? remove() : setConfirmDel(true))} /> : null}
       </Sheet>
     </Screen>
   );

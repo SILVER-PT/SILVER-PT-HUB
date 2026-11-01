@@ -27,6 +27,9 @@ JWT email/password with roles (client registers with trainer invite code) · Ope
 - Subscription catalog (no end date, monthly/annual -15%), WhatsApp request, nutritionist tariffs, subscription assignment + video quota counter
 - Measurements editable; food history; plans history with approach + archive; profile photos; client Q&A to coach
 
+## Implemented — batch 3
+- Birth date calendar with year chips; annual full-coaching chat (subscription.chat flag, /api/chat, polling); renewals card on coach dashboard (next renewal per monthly/annual); PDF progress report (expo-print + sharing) from client detail; measurement charts (weight, BF, lean/fat mass, Σ folds, BMI, each circumference)
+
 ## Backlog
 - P1: native date/time pickers, push reminders for appointments, photo side-by-side comparison
 - P1: meal delete confirmation, trainer macro targets per client

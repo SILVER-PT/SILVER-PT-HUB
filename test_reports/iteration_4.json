@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 4 (chat, renewals, birth-date calendar, body charts, PDF report). Backend: 10/10 pytest pass (chat 403 without chat package incl. spoofed chat=true overridden server-side, nutritionist 403, send/receive, unread counts + mark-read, 'after' filter, empty msg 400, birth_date persistence, measurement creation). Frontend (375x667): renewals card + row navigation OK (66 gg -> 05 gen 2027 for annual since 2026-01-05, correct vs system date 2026-11-01); hub-chat-button visible for trainer and client; chat send/receive both directions with no duplicates after 5s polling; birth date picker (year chip 1988 + day 20) updates value, closes, saves (verified in DB); 'Grafici misure' button -> progress screen, chips weight/body_fat/c-vita/bmi switch card values correctly; report-pdf-button no crash, no page errors. BUT on web the PDF button prints the current app screen, not the report (expo-print web ignores html). No deprecated Expo packages detected; no SafeAreaView issues detected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "DELETE /api/measurements/{id}", "issue": "There is no endpoint to delete a measurement. Wrong or duplicate entries stay forever. Marco Rossi already has 4 duplicate 2026-01-10 entries and 2 duplicate 2026-01-11 entries left by earlier test runs (test_silverpt_api.py never cleans up), and they clutter the charts."},
+      {"endpoint": "GET /api/chat-unread", "issue": "Works, but no frontend code calls it, so neither the hub tile nor the trainer client list shows an unread badge."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Report progressi PDF (web)", "issue": "src/report.ts:73-75 calls Print.printAsync({html}) on web. expo-print's web version (node_modules/expo-print/build/ExponentPrint.web.js) just calls window.print() and ignores the html, so the browser prints the current app screen instead of the report. No crash. Fix: on web, open a new window or a hidden iframe, write the html into it, then call print() on that window.", "testID": "report-pdf-button", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "Chat unread badges", "issue": "Nothing in the frontend calls /api/chat-unread, so users never see a new-message indicator on hub-chat-button or in the trainer client list.", "affected_testIDs": ["hub-chat-button"]}
+    ],
+    "design_issues": [
+      {"screen": "progress/[clientId] body chart", "issues": ["The y-axis always starts at 0, so small changes (85->84 cm waist, 80->79 kg) look like a flat line. Scale the axis to the data's min/max with some padding.", "BMI axis labels show 3 decimals (27.170, 20.377). Round them.", "The line ends at about 75% of the chart width, leaving empty space on the right.", "X labels are MM-DD only, so data spanning several years is ambiguous."]},
+      {"screen": "progress/[clientId]", "issues": ["The 'Completa le prime sessioni...' empty message appears even when measurement charts exist below it."]},
+      {"screen": "Renewals card", "issues": ["The renewal date shows no year ('05 gen'). Consider adding it for annual plans."]},
+      {"screen": "Chat", "issues": ["The trainer's chat header says 'Chat coaching' and does not name the client.", "If one poll fails, setMsgs([]) clears the conversation and the input bar is hidden until the next successful poll."]},
+      {"screen": "Profile form", "issues": ["profile-save-message uses the success color even for error messages."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_silverpt_chat_v4.py", "/app/test_reports/pytest/pytest_results_v4.xml"],
+  "action_items": [
+    "Fix the web PDF report: in src/report.ts, on web, write the html into a new window or iframe and print that, instead of Print.printAsync, which only prints the current page.",
+    "Add DELETE /api/measurements/{id} plus a UI action, and clean up the duplicate 2026-01-10 and 2026-01-11 measurements on Marco Rossi.",
+    "Call /api/chat-unread to show unread badges on hub-chat-button and the trainer client list.",
+    "Body charts: scale the y-axis to min/max instead of 0, round axis labels, and fill the full chart width."
+  ],
+  "critical_code_review_comments": [
+    "Chat access checks are correct: assert_access (without allow_nutri) blocks nutritionists, and the subscription chat flag is recomputed server-side from package features, so clients cannot spoof it.",
+    "chat GET marks the other party's messages read on every 5s poll. This is fine, but the GET mutates state.",
+    "nextRenewal assumes 'since' is YYYY-MM-DD. A full ISO string would give Invalid Date and show 'NaN gg' (no infinite loop)."
+  ],
+  "updated_files": ["/app/backend/tests/test_silverpt_chat_v4.py"],
+  "success_rate": {"backend": "100%", "frontend": "92% (PDF on web prints the wrong content)"},
+  "seed_data_creation": "No seed data left behind. TEST_ chat messages and measurements were deleted. Marco's subscription (annual, chat=true, since 2026-01-05) and birth_date 1990-05-10 were restored.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run backend tests with EXPO_PUBLIC_BACKEND_URL exported (frontend/.env) plus MONGO_URL/DB_NAME for cleanup. System date is 2026-11-01. Marco Rossi client id 6ae7273ec8f277d3e820ac37 has 11 measurements, including duplicates from older runs.",
+  "rca_of_issue": "PDF on web: expo-print's web module print() = window.print() and never uses options.html, so it prints the SPA page."
+}

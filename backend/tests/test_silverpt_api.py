@@ -4,6 +4,7 @@ import os
 import uuid
 import pytest
 import requests
+from bson import ObjectId
 
 
 def _base():
@@ -48,7 +49,18 @@ def ctx():
                                                      "name": "TEST_Trainer2", "role": "trainer"})
     assert r.status_code == 200
     d["t2"] = r.json()["access_token"]
-    return d
+    yield d
+    # teardown: remove measurements created on the seeded client (avoid duplicates across runs)
+    for mid in d.get("mids", []):
+        requests.delete(f"{BASE}/measurements/{mid}", headers=H(d["t"]))
+    # teardown: remove TEST plans + their sessions on the seeded client (direct DB, no delete-session API)
+    if d.get("pids"):
+        from pymongo import MongoClient
+        db = MongoClient(os.environ.get("MONGO_URL"))[os.environ.get("DB_NAME")]
+        db.sessions.delete_many({"plan_id": {"$in": d["pids"]}})
+        for pid in d["pids"]:
+            requests.delete(f"{BASE}/plans/{pid}", headers=H(d["t"]))
+            db.plans.delete_one({"_id": ObjectId(pid)})
 
 
 # --- auth
@@ -154,6 +166,7 @@ class TestPlansSessions:
         r = requests.post(f"{BASE}/plans", headers=H(ctx["t"]), json=plan)
         assert r.status_code == 200
         pid = r.json()["id"]
+        ctx.setdefault("pids", []).append(pid)
         plan["name"] = "TEST_Scheda2"
         u = requests.put(f"{BASE}/plans/{pid}", headers=H(ctx["t"]), json=plan)
         assert u.status_code == 200 and u.json()["name"] == "TEST_Scheda2"

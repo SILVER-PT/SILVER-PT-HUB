@@ -5,20 +5,32 @@ import { LineChart } from "react-native-gifted-charts";
 import { useFetch } from "@/src/api";
 import { Card, Chip, ChipRow, Empty, H, Loading, Screen, Stat, T } from "@/src/ui";
 import { useTheme } from "@/src/theme";
+import { CIRC } from "@/app/measurements/[clientId]";
 
 const METRICS = [["max_load", "Carico max", "kg"], ["total_reps", "Ripetizioni", ""], ["volume", "Volume", "kg"], ["avg_rir", "RIR medio", ""], ["avg_execution", "Esecuzione", "/10"]];
+
+const dl = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(2, 4)}`;
 
 function Chart({ points, color }: { points: { value: number; label: string }[]; color: string }) {
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
-  const w = Math.min(width, 600) - 110;
+  const w = Math.min(width, 600) - 130;
+  const vals = points.map((p) => p.value);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const pad = Math.max((max - min) * 0.25, Math.abs(max) * 0.02, 1);
+  const offset = Math.max(0, Math.floor(min - pad));
   return (
     <LineChart
       data={points}
       width={w}
       height={180}
-      spacing={points.length > 1 ? Math.max(40, w / Math.max(points.length - 1, 1) - 4) : 40}
+      spacing={points.length > 1 ? Math.max(44, (w - 48) / (points.length - 1)) : 40}
       initialSpacing={16}
+      endSpacing={16}
+      yAxisOffset={offset}
+      maxValue={Math.ceil(max + pad) - offset}
+      formatYLabel={(l: string) => String(Math.round(Number(l) * 10) / 10)}
       color={color}
       thickness={3}
       dataPointsColor={colors.onSurface}
@@ -50,15 +62,22 @@ export default function Progress() {
   const sel = ex && names.includes(ex) ? ex : names[0];
   const series = sel ? data![sel] : [];
   const m = METRICS.find((x) => x[0] === metric)!;
-  const pts = series.map((p) => ({ value: p[metric], label: p.date.slice(5) }));
+  const pts = series.map((p) => ({ value: p[metric], label: dl(p.date) }));
   const first = series[0]?.[metric];
   const last = series[series.length - 1]?.[metric];
   const body = [...(meas.data || [])].reverse();
+  const [bm, setBm] = useState("weight");
+  const bodyMetric = BODY.find((b) => b[0] === bm)!;
+  const bodyVal = (b: any) => (bm.startsWith("c:") ? b.circumferences?.[bm.slice(2)] : b[bm]);
+  const bodyPts = body.filter((b) => bodyVal(b)).map((b) => ({ value: Number(bodyVal(b)), label: dl(b.date) }));
+  const availBody = BODY.filter(([k]) => body.some((b) => (k.startsWith("c:") ? b.circumferences?.[k.slice(2)] : b[k])));
+  const bFirst = bodyPts[0]?.value;
+  const bLast = bodyPts[bodyPts.length - 1]?.value;
 
   return (
     <Screen title="Progressi" back>
       {loading && !data ? <Loading /> : null}
-      {data && names.length === 0 ? <Empty icon="trending-up-outline" text="Completa le prime sessioni per vedere i grafici." /> : null}
+      {data && names.length === 0 && !body.length ? <Empty icon="trending-up-outline" text="Completa le prime sessioni per vedere i grafici." /> : null}
       {names.length > 0 && (
         <>
           <H>Esercizio</H>
@@ -79,19 +98,25 @@ export default function Progress() {
       )}
       {body.length > 0 && (
         <>
-          <H>Composizione corporea</H>
-          <Card>
-            <T style={{ fontWeight: "900" }}>Peso (kg)</T>
-            <View style={{ overflow: "hidden" }}><Chart points={body.filter((b) => b.weight).map((b) => ({ value: b.weight, label: b.date.slice(5) }))} color={colors.silver} /></View>
+          <H>Misurazioni</H>
+          <ChipRow>{availBody.map(([k, l]) => <Chip key={k} testID={`progress-body-${k.replace(":", "-")}`} label={l} active={k === bm} onPress={() => setBm(k)} />)}</ChipRow>
+          <Card accent testID="progress-body-card">
+            <T style={{ fontWeight: "900" }}>{bodyMetric[1]}</T>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Stat label="Inizio" value={bFirst} unit={bodyMetric[2]} />
+              <Stat label="Ultimo" value={bLast} unit={bodyMetric[2]} />
+              <Stat testID="progress-body-delta" label="Δ" value={bFirst != null && bLast != null ? Math.round((bLast - bFirst) * 10) / 10 : null} unit={bodyMetric[2]} />
+            </View>
+            {bodyPts.length ? <View style={{ overflow: "hidden", marginTop: 8 }}><Chart points={bodyPts} color={colors.silver} /></View> : <T muted>Nessun dato per questa misura.</T>}
           </Card>
-          {body.some((b) => b.body_fat) ? (
-            <Card>
-              <T style={{ fontWeight: "900" }}>% Massa grassa</T>
-              <View style={{ overflow: "hidden" }}><Chart points={body.filter((b) => b.body_fat).map((b) => ({ value: b.body_fat, label: b.date.slice(5) }))} color={colors.laser} /></View>
-            </Card>
-          ) : null}
         </>
       )}
     </Screen>
   );
 }
+
+const BODY = [
+  ["weight", "Peso", "kg"], ["body_fat", "% Grasso", "%"], ["lean_mass", "Massa magra", "kg"], ["fat_mass", "Massa grassa", "kg"],
+  ["sum_folds", "Σ Pliche", "mm"], ["bmi", "BMI", ""],
+  ...CIRC.map(([k, l]) => [`c:${k}`, l, "cm"]),
+];

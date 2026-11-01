@@ -7,6 +7,7 @@ import { useAuth } from "@/src/auth";
 import { api, fmtDate, useFetch } from "@/src/api";
 import { Avatar, Btn, Card, Empty, ErrorText, Field, H, Laser, Loading, Screen, T } from "@/src/ui";
 import { ClientHub } from "@/src/client-hub";
+import { Renewals } from "@/src/renewals";
 import { useTheme } from "@/src/theme";
 
 function TrainerHome() {
@@ -15,6 +16,7 @@ function TrainerHome() {
   const { colors } = useTheme();
   const { data, loading, error } = useFetch<any[]>("/clients");
   const questions = useFetch<any[]>(user?.role === "trainer" ? "/questions" : null);
+  const unread = useFetch<Record<string, number>>(user?.role === "trainer" ? "/chat-unread" : null);
   const openQ = (questions.data || []).filter((x) => x.status === "open").length;
   const [q, setQ] = useState("");
   const list = (data || []).filter((c) => c.name.toLowerCase().includes(q.toLowerCase()));
@@ -40,6 +42,7 @@ function TrainerHome() {
           <Btn testID="packages-button" small variant="dark" icon="pricetags" title="Listino" style={{ flex: 1 }} onPress={() => router.push("/packages")} />
         </View>
       ) : null}
+      {user?.role === "trainer" && data ? <Renewals clients={data} /> : null}
       <H>{`Clienti (${data?.length ?? 0})`}</H>
       {loading && !data ? <Loading /> : null}
       <ErrorText text={error} />
@@ -51,6 +54,11 @@ function TrainerHome() {
             <T style={{ fontWeight: "800" }}>{c.name}</T>
             <T muted style={{ fontSize: 13 }}>{c.profile?.goal || c.email}</T>
           </View>
+          {unread.data?.[c.id] ? (
+            <View testID={`unread-badge-${c.id}`} style={{ minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center" }}>
+              <T style={{ color: colors.onBrandPrimary, fontSize: 12, fontWeight: "900" }}>{unread.data[c.id]}</T>
+            </View>
+          ) : null}
           {c.profile?.competitor ? <Ionicons name="trophy" size={18} color={colors.silver} /> : null}
           <Ionicons name="chevron-forward" size={20} color={colors.muted} />
         </Card>
@@ -114,7 +122,7 @@ function ClientHome() {
         </Card>
       ))}
       <H>Il mio percorso</H>
-      <ClientHub clientId={user!.id} visibility={user?.visibility as any} />
+      <ClientHub clientId={user!.id} visibility={user?.visibility as any} chat={!!user?.subscription?.chat} />
       <H>Ultime sessioni</H>
       {sessions.data?.filter((s) => s.status === "completed").slice(0, 5).map((s) => (
         <Card key={s.id} testID={`session-history-${s.id}`} onPress={() => router.push(`/session/${s.id}`)}>

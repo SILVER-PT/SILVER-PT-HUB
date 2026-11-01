@@ -10,7 +10,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const ymd = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
 
 // Tap-to-pick month calendar. value: YYYY-MM-DD
-export function DatePicker({ value, onChange, testID = "date-picker" }: { value: string; onChange: (v: string) => void; testID?: string }) {
+export function DatePicker({ value, onChange, testID = "date-picker", yearNav }: { value: string; onChange: (v: string) => void; testID?: string; yearNav?: boolean }) {
   const s = useStyles();
   const { colors } = useTheme();
   const init = value ? new Date(value + "T12:00:00") : new Date();
@@ -29,6 +29,13 @@ export function DatePicker({ value, onChange, testID = "date-picker" }: { value:
   };
   return (
     <View style={s.wrap} testID={testID}>
+      {yearNav ? (
+        <ChipRow>
+          {Array.from({ length: 86 }, (_, i) => t.getFullYear() - 5 - i).map((yy) => (
+            <Chip key={yy} testID={`${testID}-year-${yy}`} label={String(yy)} active={yy === y} onPress={() => setY(yy)} />
+          ))}
+        </ChipRow>
+      ) : null}
       <View style={s.head}>
         <Pressable testID={`${testID}-prev`} onPress={() => shift(-1)} style={s.nav}><Ionicons name="chevron-back" size={20} color={colors.onSurface} /></Pressable>
         <Text style={s.month}>{MONTHS[m]} {y}</Text>

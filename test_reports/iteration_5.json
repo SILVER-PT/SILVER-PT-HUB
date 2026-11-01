@@ -1,0 +1,44 @@
+{
+  "summary": "Retested the iteration_4 fixes on backend and frontend at 375x667. Backend: 56/56 pytest pass in the full parallel suite, including the new test_silverpt_v5.py (DELETE measurements and chat-unread). All 6 requested features work: the web PDF prints through a hidden iframe with 'SILVER-PT' and 'Marco Rossi' in the content, window.print is not called on the main page, the iframe is removed and there are no page errors; the trainer home shows unread-badge-<cid> '2' after 2 client messages; measure-delete-button deletes the measurement in the UI and in the DB; progress charts have an offset y-axis (77-82 kg, 61-64), rounded labels, dd/mm/yy x labels and no empty message when body data exists; the chat header reads 'Chat · Marco Rossi' and the 3 messages stay visible while GET /chat returns 500; the profile save error shows in rgb(255,59,59). Found the cause of the repeated duplicate measurements: test_silverpt_api.py never deleted the measurements, plans and sessions it created on Marco Rossi. I fixed this with a teardown. Remaining issues are minor UI ones. No deprecated Expo packages found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "progress/[clientId].tsx Chart", "issue": "The chart content is wider than the visible area (scrollWidth 332-370 vs clientWidth 268), and scrollToEnd scrolls it 11-29px. As a result the first x-label is cut off ('10/01/26' shows as '6', '01/11/26' as '11/26') and the first point sits under the y-axis. Fix: compute spacing from the real plot width (width - initialSpacing - endSpacing - yAxisLabelWidth) / (n-1), or use adjustToWidth/parentWidth, and drop scrollToEnd when the content fits. This also fills the full width the iteration_4 item asked for, which is still not fully done.", "testID": "progress-body-card, progress-chart-card", "priority": "LOW"},
+      {"component": "measurements/[clientId].tsx remove()", "issue": "measure-delete-button deletes right away with no confirmation (one tap removes data for good).", "testID": "measure-delete-button", "priority": "LOW"},
+      {"component": "chat/[clientId].tsx", "issue": "err is only rendered inside ListEmptyComponent. When messages exist, a failed send or refresh shows nothing, and the typed text is already cleared by setText('') before the POST, so it is lost silently.", "testID": "chat-send-button", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Client unread badge", "issue": "src/client-hub.tsx does not use /api/chat-unread, so the client's hub-chat-button has no unread badge (part of the iteration_4 action item). Only the trainer list badge was implemented.", "affected_testIDs": ["hub-chat-button"]}
+    ],
+    "design_issues": [
+      {"screen": "PDF report", "issues": ["The SVG chart labels in report.ts use date.slice(5) (mm-dd, e.g. '01-10'), while the app uses dd/mm/yy. Use the same dl() format."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_silverpt_v5.py", "/app/backend/tests/test_silverpt_api.py", "/app/test_reports/pytest/pytest_results_v5.xml"],
+  "action_items": [
+    "Fix the clipped first x-label and points in the progress charts (spacing/width calculation plus scrollToEnd).",
+    "Optional: add a confirm step to measure-delete-button.",
+    "Show chat send/refresh errors when messages exist (e.g. an ErrorText above the input bar), and restore the text if the send fails.",
+    "Optional: unread badge on the client's hub-chat-button using /api/chat-unread.",
+    "Optional: use the dd/mm/yy label format in the PDF SVG charts."
+  ],
+  "critical_code_review_comments": [
+    "The DELETE /api/measurements/{mid} permissions are correct: trainer allowed, client 403 when measurements are hidden and 200 when visible, nutritionist 403, 404 if already deleted, 401/403 without a token.",
+    "The /api/chat-unread counts are correct and reset when GET /chat is called.",
+    "report.ts: the web iframe print works. The 800ms setTimeout before print() may fire before the photo <img> tags finish loading. Consider waiting for frame.onload or for the images to load."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_silverpt_v5.py (new; visibility tests use a separate TEST_ client to avoid races with other suites)",
+    "/app/backend/tests/test_silverpt_api.py (fixture now yields and tears down the measurements, plans and sessions it creates on Marco Rossi; this caused the duplicate 01-10/01-11 measurements and the TEST_Scheda2 plans piling up)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100% of requested fixes verified (3 minor UI issues)"},
+  "seed_data_creation": "None kept. Removed: 2 duplicate measurements, 2 TEST_Scheda2 plans and their sessions from my first full run, and TEST_ chat messages. Marco Rossi is back to 3 measurements (2026-01-10, 2026-01-11, 2026-11-01), 3 plans, 2 sessions and 1 chat message. Visibility was reset to all OFF (the default recorded in iteration_3). It may have been {measurements:true, photos:true} before this run because of a race between suites, so re-enable it if that was intended.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest with frontend/.env and backend/.env exported (EXPO_PUBLIC_BACKEND_URL, MONGO_URL, DB_NAME). pytest.ini uses xdist loadscope; run a single file with '-n 0'. Two TEST_Scheda2 plans (14:01 and 14:02) from earlier iterations are still on Marco Rossi and provide the TEST_Panca progress data. 25 TEST_ users from earlier register tests are still in the DB.",
+  "rca_of_issue": "Duplicate measurements: TestMeasurements in test_silverpt_api.py posted 2026-01-10 and 2026-01-11 measurements with empty notes, and the module fixture had no teardown, so every run added 2 rows (and a plan and session). Fixed with a teardown that uses the new DELETE endpoint plus DB cleanup of the plans and sessions."
+}
