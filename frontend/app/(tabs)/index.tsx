@@ -74,6 +74,7 @@ function ClientHome() {
   useFocusEffect(useCallback(() => { refresh().catch(() => {}); }, [])); // eslint-disable-line react-hooks/exhaustive-deps
   const plans = useFetch<any[]>(`/plans?client_id=${user!.id}`);
   const sessions = useFetch<any[]>(`/sessions?client_id=${user!.id}`);
+  const unread = useFetch<Record<string, number>>(user?.subscription?.chat ? "/chat-unread" : null);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const active = sessions.data?.find((s) => s.status === "in_progress");
@@ -122,7 +123,7 @@ function ClientHome() {
         </Card>
       ))}
       <H>Il mio percorso</H>
-      <ClientHub clientId={user!.id} visibility={user?.visibility as any} chat={!!user?.subscription?.chat} />
+      <ClientHub clientId={user!.id} visibility={user?.visibility as any} chat={!!user?.subscription?.chat} badges={{ chat: unread.data?.[user!.id] || 0 }} />
       <H>Ultime sessioni</H>
       {sessions.data?.filter((s) => s.status === "completed").slice(0, 5).map((s) => (
         <Card key={s.id} testID={`session-history-${s.id}`} onPress={() => router.push(`/session/${s.id}`)}>

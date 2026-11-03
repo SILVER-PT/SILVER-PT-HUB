@@ -30,6 +30,11 @@ JWT email/password with roles (client registers with trainer invite code) · Ope
 ## Implemented — batch 3
 - Birth date calendar with year chips; annual full-coaching chat (subscription.chat flag, /api/chat, polling); renewals card on coach dashboard (next renewal per monthly/annual); PDF progress report (expo-print + sharing) from client detail; measurement charts (weight, BF, lean/fat mass, Σ folds, BMI, each circumference)
 
+## Implemented — batch 4
+- Manual payments per renewal cycle (POST/GET/DELETE /api/payments, unique client+period), 6-month income summary card on coach dashboard, "Segna pagato"/undo on renewals
+- Client chat tile red badge with unread coach messages (/api/chat-unread)
+- Test data (TEST_ users/plans) cleaned
+
 ## Backlog
 - P1: native date/time pickers, push reminders for appointments, photo side-by-side comparison
 - P1: meal delete confirmation, trainer macro targets per client

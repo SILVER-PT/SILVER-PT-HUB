@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
+from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel, Field
 from typing import List, Optional, Any
 from datetime import datetime, timezone, timedelta
@@ -1099,6 +1100,63 @@ async def chat_unread(user=Depends(current_user)):
     return out
 
 
+# ---------- payments (manual, marked by coach) ----------
+class PaymentIn(BaseModel):
+    client_id: str
+    amount: float = Field(gt=0)
+    period: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")  # cycle start date the payment covers
+    note: Optional[str] = ""
+
+
+@api.post("/payments")
+async def create_payment(body: PaymentIn, user=Depends(require_trainer)):
+    c = await assert_access(user, body.client_id)
+    if await db.payments.find_one({"client_id": body.client_id, "period": body.period}):
+        raise HTTPException(409, "Rinnovo già segnato come pagato")
+    doc = body.model_dump()
+    doc.update({"trainer_id": str(user["_id"]), "client_name": c["name"], "package": (c.get("subscription") or {}).get("name", ""),
+                "paid_at": now_iso()})
+    try:
+        await db.payments.insert_one(doc)
+    except DuplicateKeyError:
+        raise HTTPException(409, "Rinnovo già segnato come pagato")
+    return ser(doc)
+
+
+@api.delete("/payments/{pid}")
+async def delete_payment(pid: str, user=Depends(require_trainer)):
+    res = await db.payments.delete_one({"_id": oid(pid), "trainer_id": str(user["_id"])})
+    if not res.deleted_count:
+        raise HTTPException(404, "Pagamento non trovato")
+    return {"ok": True}
+
+
+@api.get("/payments")
+async def list_payments(user=Depends(require_trainer)):
+    docs = await db.payments.find({"trainer_id": str(user["_id"])}).sort("paid_at", -1).to_list(5000)
+    return [ser(d) for d in docs]
+
+
+@api.get("/payments/summary")
+async def payments_summary(user=Depends(require_trainer)):
+    """Income per month (by payment date) for the last 6 months."""
+    now = datetime.now(timezone.utc)
+    months = []
+    y, m = now.year, now.month
+    for _ in range(6):
+        months.append(f"{y}-{m:02d}")
+        m -= 1
+        if m == 0:
+            y, m = y - 1, 12
+    totals = {k: {"month": k, "total": 0.0, "count": 0} for k in months}
+    async for p in db.payments.find({"trainer_id": str(user["_id"]), "paid_at": {"$gte": months[-1]}}):
+        k = p["paid_at"][:7]
+        if k in totals:
+            totals[k]["total"] = round(totals[k]["total"] + p["amount"], 2)
+            totals[k]["count"] += 1
+    return list(reversed([totals[k] for k in months]))
+
+
 # ---------- questions (client -> coach) ----------
 class QuestionIn(BaseModel):
     subject: str = Field(min_length=1)
@@ -1166,6 +1224,7 @@ app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], 
 @app.on_event("startup")
 async def startup():
     await db.users.create_index("email", unique=True)
+    await db.payments.create_index([("client_id", 1), ("period", 1)], unique=True)
     try:
         init_storage()
     except Exception as e:

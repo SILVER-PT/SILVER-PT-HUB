@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { makeStyles, useTheme } from "@/src/theme";
 
-export function ClientHub({ clientId, trainer, nutri, visibility, chat }: { clientId: string; trainer?: boolean; nutri?: boolean; visibility?: Record<string, boolean>; chat?: boolean }) {
+export function ClientHub({ clientId, trainer, nutri, visibility, chat, badges }: { clientId: string; trainer?: boolean; nutri?: boolean; visibility?: Record<string, boolean>; chat?: boolean; badges?: Record<string, number> }) {
   const s = useStyles();
   const { colors } = useTheme();
   const router = useRouter();
@@ -34,6 +34,11 @@ export function ClientHub({ clientId, trainer, nutri, visibility, chat }: { clie
         >
           <Ionicons name={it.icon as any} size={24} color={colors.brandPrimary} />
           <Text style={s.tileText}>{it.label}</Text>
+          {badges?.[it.key] ? (
+            <View testID={`hub-${it.key}-badge`} style={s.badge}>
+              <Text style={s.badgeText}>{badges[it.key]}</Text>
+            </View>
+          ) : null}
         </Pressable>
       ))}
     </View>
@@ -42,6 +47,8 @@ export function ClientHub({ clientId, trainer, nutri, visibility, chat }: { clie
 
 const useStyles = makeStyles((c) => ({
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  badge: { position: "absolute", top: 10, right: 10, minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, backgroundColor: c.brandPrimary, alignItems: "center", justifyContent: "center" },
+  badgeText: { color: c.onBrandPrimary, fontSize: 12, fontWeight: "900" },
   tile: { width: "47%", flexGrow: 1, height: 88, borderRadius: 16, borderWidth: 1, borderColor: c.border, backgroundColor: c.surfaceSecondary, padding: 14, justifyContent: "space-between" },
   tileText: { color: c.onSurface, fontWeight: "800", fontSize: 14, textTransform: "uppercase", letterSpacing: 0.5 },
 }));
