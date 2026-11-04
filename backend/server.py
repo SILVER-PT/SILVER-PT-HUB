@@ -17,8 +17,6 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 APP_NAME = os.environ.get('APP_NAME', 'silver-pt')
-STORAGE_BASE = os.environ.get('STORAGE_BASE', '')
-STORAGE_URL = STORAGE_BASE.rstrip('/') + "/objstore/api/v1/storage"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
