@@ -49,7 +49,7 @@ export default function Login() {
     <View style={{ width: "100%", alignItems: "center" }}>
       <Image 
         testID="login-logo" 
-        source={require("../assets/images/logo-wide-v2.png")} 
+        source={require("../assets/images/logo-v3.png")} 
         style={{ width: "100%", aspectRatio: 1100 / 275 }} 
         contentFit="contain" 
       />
