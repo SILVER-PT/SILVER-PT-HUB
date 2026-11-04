@@ -26,6 +26,24 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+import os
+from fastapi import FastAPI
+from motor.motor_asyncio import AsyncIOMotorClient
+
+app = FastAPI()
+
+@app.on_event("startup")
+async def startup_db_client():
+    app.mongodb_client = AsyncIOMotorClient(os.environ["MONGO_URL"])
+    app.db = app.mongodb_client[os.environ.get("DB_NAME", "silver_pt")]
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    app.mongodb_client.close()
+
+@app.get("/")
+async def root():
+    return {"status": "online", "message": "SILVER-PT API is running"}
 
 
 @app.get("/health", include_in_schema=False)
