@@ -24,10 +24,6 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 import os
-from fastapi import FastAPI
-from motor.motor_asyncio import AsyncIOMotorClient
-
-app = FastAPI()
 
 @app.on_event("startup")
 async def startup_db_client():
