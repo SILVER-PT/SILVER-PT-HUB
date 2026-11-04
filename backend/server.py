@@ -19,9 +19,7 @@ load_dotenv(ROOT_DIR / '.env')
 client = AsyncIOMotorClient(os.environ['MONGO_URL'])
 db = client[os.environ['DB_NAME']]
 JWT_SECRET = os.environ['JWT_SECRET']
-EMERGENT_KEY = os.environ['EMERGENT_LLM_KEY']
 APP_NAME = os.environ.get('APP_NAME', 'silver-pt')
-STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
 STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
