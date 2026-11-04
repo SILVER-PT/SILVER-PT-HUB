@@ -17,11 +17,13 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 APP_NAME = os.environ.get('APP_NAME', 'silver-pt')
+JWT_SECRET = os.environ.get('JWT_SECRET', 'secret-key-silver-pt')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
 @app.on_event("startup")
 async def startup_db_client():
     global db
@@ -31,12 +33,12 @@ async def startup_db_client():
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    app.mongodb_client.close()
+    if hasattr(app, "mongodb_client"):
+        app.mongodb_client.close()
 
 @app.get("/")
 async def root():
     return {"status": "online", "message": "SILVER-PT API is running"}
-
 
 @app.get("/health", include_in_schema=False)
 @app.head("/health", include_in_schema=False)
@@ -45,11 +47,9 @@ async def health():
 
 api = APIRouter(prefix="/api")
 
-
 # ---------- helpers ----------
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
-
 
 def ser(doc: Optional[dict]) -> Optional[dict]:
     """Mongo document -> JSON-safe dict with `id`."""
@@ -67,19 +67,16 @@ def ser(doc: Optional[dict]) -> Optional[dict]:
             out[k] = v
     return out
 
-
 def oid(s: str) -> ObjectId:
     try:
         return ObjectId(s)
     except Exception:
         raise HTTPException(404, "Non trovato")
 
-
 # ---------- auth ----------
 def make_token(user_id: str, role: str) -> str:
     n = datetime.now(timezone.utc)
     return jwt.encode({"sub": user_id, "role": role, "iat": n, "exp": n + timedelta(days=30)}, JWT_SECRET, algorithm="HS256")
-
 
 async def user_from_token(token: str) -> dict:
     try:
@@ -91,18 +88,15 @@ async def user_from_token(token: str) -> dict:
         raise HTTPException(401, "Utente non trovato")
     return user
 
-
 async def current_user(authorization: str = Header(None)) -> dict:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(401, "Non autenticato")
     return await user_from_token(authorization.split(" ", 1)[1])
 
-
 async def require_trainer(user=Depends(current_user)):
     if user["role"] != "trainer":
         raise HTTPException(403, "Solo per il trainer")
     return user
-
 
 async def assert_access(user: dict, client_id: str, allow_nutri: bool = False) -> dict:
     """Trainer: own clients. Client: self. Nutritionist: assigned clients (only when allow_nutri)."""
@@ -117,20 +111,16 @@ async def assert_access(user: dict, client_id: str, allow_nutri: bool = False) -
         raise HTTPException(403, "Accesso negato")
     return c
 
-
 def team_id(u: dict) -> str:
     return str(u["_id"]) if u["role"] == "trainer" else u.get("trainer_id", "")
 
-
 def visible(c: dict, key: str) -> bool:
     return bool((c.get("visibility") or {}).get(key, False))
-
 
 async def require_staff(user=Depends(current_user)):
     if user["role"] not in ("trainer", "nutritionist"):
         raise HTTPException(403, "Solo per lo staff")
     return user
-
 
 class RegisterIn(BaseModel):
     email: str
@@ -139,11 +129,9 @@ class RegisterIn(BaseModel):
     role: str = "client"
     invite_code: Optional[str] = None
 
-
 class LoginIn(BaseModel):
     email: str
     password: str
-
 
 @api.post("/auth/register")
 async def register(body: RegisterIn):
@@ -170,7 +158,6 @@ async def register(body: RegisterIn):
     doc["_id"] = res.inserted_id
     return {"access_token": make_token(str(res.inserted_id), doc["role"]), "user": ser(doc)}
 
-
 @api.post("/auth/login")
 async def login(body: LoginIn):
     user = await db.users.find_one({"email": body.email.strip().lower()})
@@ -178,17 +165,14 @@ async def login(body: LoginIn):
         raise HTTPException(401, "Email o password errati")
     return {"access_token": make_token(str(user["_id"]), user["role"]), "user": ser(user)}
 
-
 @api.get("/auth/me")
 async def me(user=Depends(current_user)):
     return ser(user)
-
 
 # ---------- profile / clients ----------
 class ProfileIn(BaseModel):
     name: Optional[str] = None
     profile: dict = {}
-
 
 @api.put("/clients/{client_id}/profile")
 async def update_profile(client_id: str, body: ProfileIn, user=Depends(current_user)):
@@ -199,24 +183,20 @@ async def update_profile(client_id: str, body: ProfileIn, user=Depends(current_u
     await db.users.update_one({"_id": oid(client_id)}, {"$set": upd})
     return ser(await db.users.find_one({"_id": oid(client_id)}))
 
-
 @api.get("/clients")
 async def list_clients(user=Depends(require_staff)):
     f = {"role": "client", "trainer_id": str(user["_id"])} if user["role"] == "trainer" else {"role": "client", "nutritionist_id": str(user["_id"])}
     docs = await db.users.find(f).sort("name", 1).to_list(1000)
     return [ser(d) for d in docs]
 
-
 @api.get("/clients/{client_id}")
 async def get_client(client_id: str, user=Depends(current_user)):
     return ser(await assert_access(user, client_id, allow_nutri=True))
-
 
 class MeIn(BaseModel):
     name: Optional[str] = None
     avatar: Optional[str] = None
     staff: Optional[dict] = None  # whatsapp, bio, title (staff only)
-
 
 @api.put("/me")
 async def update_me(body: MeIn, user=Depends(current_user)):
@@ -231,12 +211,10 @@ async def update_me(body: MeIn, user=Depends(current_user)):
         await db.users.update_one({"_id": user["_id"]}, {"$set": upd})
     return ser(await db.users.find_one({"_id": user["_id"]}))
 
-
 class SettingsIn(BaseModel):
     visibility: Optional[dict] = None
     nutritionist_id: Optional[str] = None  # "" to remove
     subscription: Optional[dict] = None  # {package_id, name, price, billing, since}
-
 
 @api.put("/clients/{client_id}/settings")
 async def client_settings(client_id: str, body: SettingsIn, user=Depends(require_trainer)):
@@ -261,14 +239,12 @@ async def client_settings(client_id: str, body: SettingsIn, user=Depends(require
         await db.users.update_one({"_id": oid(client_id)}, {"$set": upd})
     return ser(await db.users.find_one({"_id": oid(client_id)}))
 
-
 @api.get("/team")
 async def team(user=Depends(current_user)):
     """Coach + nutritionists of the user's team (public staff info)."""
     tid = team_id(user)
     docs = await db.users.find({"$or": [{"_id": oid(tid)}, {"role": "nutritionist", "trainer_id": tid}]}).to_list(100)
     return [{"id": str(d["_id"]), "name": d["name"], "role": d["role"], "avatar": d.get("avatar"), "staff": d.get("staff") or {}} for d in docs]
-
 
 async def owner_ids(user: dict, client_id: Optional[str]) -> dict:
     """Mongo filter for docs belonging to a client the user may see."""
@@ -279,16 +255,13 @@ async def owner_ids(user: dict, client_id: Optional[str]) -> dict:
         return {"client_id": client_id}
     return {"trainer_id": str(user["_id"])}
 
-
 async def trainer_of(user: dict, client_id: str) -> str:
     c = await assert_access(user, client_id)
     return c["trainer_id"]
 
-
 # ---------- comments (generic) ----------
 class CommentIn(BaseModel):
     text: str
-
 
 async def add_comment(target: str, target_id: str, user: dict, text: str):
     doc = {"target": target, "target_id": target_id, "author_id": str(user["_id"]), "author_name": user["name"],
@@ -296,11 +269,9 @@ async def add_comment(target: str, target_id: str, user: dict, text: str):
     await db.comments.insert_one(doc)
     return ser(doc)
 
-
 async def get_comments(target: str, target_id: str):
     docs = await db.comments.find({"target": target, "target_id": target_id}).sort("created_at", 1).to_list(500)
     return [ser(d) for d in docs]
-
 
 # ---------- appointments ----------
 class AppointmentIn(BaseModel):
@@ -310,7 +281,6 @@ class AppointmentIn(BaseModel):
     duration_min: int = 60
     location: Optional[str] = ""
     notes: Optional[str] = ""
-
 
 @api.post("/appointments")
 async def create_appointment(body: AppointmentIn, user=Depends(current_user)):
@@ -324,13 +294,11 @@ async def create_appointment(body: AppointmentIn, user=Depends(current_user)):
     await db.appointments.insert_one(doc)
     return ser(doc)
 
-
 @api.get("/appointments")
 async def list_appointments(client_id: Optional[str] = None, user=Depends(current_user)):
     f = await owner_ids(user, client_id)
     docs = await db.appointments.find(f).sort("start", 1).to_list(1000)
     return [ser(d) for d in docs]
-
 
 async def get_appt(appt_id: str, user: dict) -> dict:
     a = await db.appointments.find_one({"_id": oid(appt_id)})
@@ -339,17 +307,14 @@ async def get_appt(appt_id: str, user: dict) -> dict:
     await assert_access(user, a["client_id"])
     return a
 
-
 @api.get("/appointments/{appt_id}")
 async def appointment_detail(appt_id: str, user=Depends(current_user)):
     a = ser(await get_appt(appt_id, user))
     a["comments"] = await get_comments("appointment", appt_id)
     return a
 
-
 class StatusIn(BaseModel):
     status: str
-
 
 @api.put("/appointments/{appt_id}/status")
 async def appointment_status(appt_id: str, body: StatusIn, user=Depends(current_user)):
@@ -359,17 +324,14 @@ async def appointment_status(appt_id: str, body: StatusIn, user=Depends(current_
     await db.appointments.update_one({"_id": oid(appt_id)}, {"$set": {"status": body.status}})
     return {"ok": True}
 
-
 @api.post("/appointments/{appt_id}/comments")
 async def appointment_comment(appt_id: str, body: CommentIn, user=Depends(current_user)):
     await get_appt(appt_id, user)
     return await add_comment("appointment", appt_id, user, body.text)
 
-
 # ---------- measurements (ISSA) ----------
 CIRC_KEYS = ["collo", "spalle", "torace", "braccio_dx", "braccio_sx", "vita", "addome", "fianchi", "coscia_dx", "coscia_sx", "polpaccio_dx", "polpaccio_sx"]
 FOLD_KEYS = ["pettorale", "ascellare", "tricipite", "sottoscapolare", "addominale", "soprailiaca", "coscia"]
-
 
 def body_fat(folds: dict, sex: str, age: float) -> Optional[dict]:
     """Jackson-Pollock 7 or 3 sites + Siri equation (ISSA standard)."""
@@ -400,7 +362,6 @@ def body_fat(folds: dict, sex: str, age: float) -> Optional[dict]:
     bf = round((495 / d) - 450, 1)
     return {"body_fat": bf, "sum_folds": round(s, 1), "method": method}
 
-
 class MeasurementIn(BaseModel):
     client_id: str
     date: str
@@ -409,7 +370,6 @@ class MeasurementIn(BaseModel):
     circumferences: dict = {}
     skinfolds: dict = {}
     notes: Optional[str] = ""
-
 
 async def build_measurement(body: MeasurementIn, user: dict) -> dict:
     c = await assert_access(user, body.client_id)
@@ -434,13 +394,11 @@ async def build_measurement(body: MeasurementIn, user: dict) -> dict:
         doc["bmi"] = round(body.weight / ((body.height / 100) ** 2), 1)
     return doc
 
-
 @api.post("/measurements")
 async def create_measurement(body: MeasurementIn, user=Depends(current_user)):
     doc = await build_measurement(body, user)
     await db.measurements.insert_one(doc)
     return ser(doc)
-
 
 @api.put("/measurements/{mid}")
 async def update_measurement(mid: str, body: MeasurementIn, user=Depends(current_user)):
@@ -455,7 +413,6 @@ async def update_measurement(mid: str, body: MeasurementIn, user=Depends(current
     await db.measurements.update_one({"_id": oid(mid)}, {"$set": doc})
     return ser(await db.measurements.find_one({"_id": oid(mid)}))
 
-
 @api.delete("/measurements/{mid}")
 async def delete_measurement(mid: str, user=Depends(current_user)):
     m = await db.measurements.find_one({"_id": oid(mid)})
@@ -467,7 +424,6 @@ async def delete_measurement(mid: str, user=Depends(current_user)):
     await db.measurements.delete_one({"_id": oid(mid)})
     return {"ok": True}
 
-
 @api.get("/measurements")
 async def list_measurements(client_id: str, user=Depends(current_user)):
     c = await assert_access(user, client_id, allow_nutri=True)
@@ -475,7 +431,6 @@ async def list_measurements(client_id: str, user=Depends(current_user)):
         raise HTTPException(403, "Le misure sono visibili solo al coach")
     docs = await db.measurements.find({"client_id": client_id}).sort([("date", -1), ("created_at", -1)]).to_list(500)
     return [ser(d) for d in docs]
-
 
 # ---------- workout plans ----------
 class PlanIn(BaseModel):
@@ -486,7 +441,6 @@ class PlanIn(BaseModel):
     active: bool = True
     days: List[dict] = []  # [{name, exercises:[{name, sets, reps, load, rir, rest, notes}]}]
 
-
 @api.post("/plans")
 async def create_plan(body: PlanIn, user=Depends(require_trainer)):
     c = await assert_access(user, body.client_id)
@@ -494,7 +448,6 @@ async def create_plan(body: PlanIn, user=Depends(require_trainer)):
     doc.update({"trainer_id": c["trainer_id"], "client_name": c["name"], "created_at": now_iso()})
     await db.plans.insert_one(doc)
     return ser(doc)
-
 
 @api.get("/plans/history")
 async def plans_history(user=Depends(require_trainer)):
@@ -513,7 +466,6 @@ async def plans_history(user=Depends(require_trainer)):
         out.append(x)
     return out
 
-
 @api.put("/plans/{plan_id}")
 async def update_plan(plan_id: str, body: PlanIn, user=Depends(require_trainer)):
     p = await db.plans.find_one({"_id": oid(plan_id)})
@@ -524,7 +476,6 @@ async def update_plan(plan_id: str, body: PlanIn, user=Depends(require_trainer))
                                                                "approach": body.approach, "active": body.active, "updated_at": now_iso()}})
     return ser(await db.plans.find_one({"_id": oid(plan_id)}))
 
-
 @api.get("/plans")
 async def list_plans(client_id: str, user=Depends(current_user)):
     await assert_access(user, client_id)
@@ -534,7 +485,6 @@ async def list_plans(client_id: str, user=Depends(current_user)):
     docs = await db.plans.find(f).sort("created_at", -1).to_list(200)
     return [ser(d) for d in docs]
 
-
 @api.get("/plans/{plan_id}")
 async def get_plan(plan_id: str, user=Depends(current_user)):
     p = await db.plans.find_one({"_id": oid(plan_id)})
@@ -543,12 +493,10 @@ async def get_plan(plan_id: str, user=Depends(current_user)):
     await assert_access(user, p["client_id"])
     return ser(p)
 
-
 # ---------- sessions ----------
 class SessionStartIn(BaseModel):
     plan_id: str
     day_index: int
-
 
 @api.post("/sessions")
 async def start_session(body: SessionStartIn, user=Depends(current_user)):
@@ -572,12 +520,10 @@ async def start_session(body: SessionStartIn, user=Depends(current_user)):
     await db.sessions.insert_one(doc)
     return ser(doc)
 
-
 class SessionUpdateIn(BaseModel):
     exercises: List[dict]
     notes: Optional[str] = ""
     finish: bool = False
-
 
 async def get_sess(sid: str, user: dict):
     s = await db.sessions.find_one({"_id": oid(sid)})
@@ -585,7 +531,6 @@ async def get_sess(sid: str, user: dict):
         raise HTTPException(404, "Sessione non trovata")
     await assert_access(user, s["client_id"])
     return s
-
 
 @api.put("/sessions/{sid}")
 async def update_session(sid: str, body: SessionUpdateIn, user=Depends(current_user)):
@@ -596,19 +541,16 @@ async def update_session(sid: str, body: SessionUpdateIn, user=Depends(current_u
     await db.sessions.update_one({"_id": oid(sid)}, {"$set": upd})
     return ser(await db.sessions.find_one({"_id": oid(sid)}))
 
-
 @api.get("/sessions/{sid}")
 async def session_detail(sid: str, user=Depends(current_user)):
     s = ser(await get_sess(sid, user))
     s["comments"] = await get_comments("session", sid)
     return s
 
-
 @api.post("/sessions/{sid}/comments")
 async def session_comment(sid: str, body: CommentIn, user=Depends(current_user)):
     await get_sess(sid, user)
     return await add_comment("session", sid, user, body.text)
-
 
 @api.get("/sessions")
 async def list_sessions(client_id: str, user=Depends(current_user)):
@@ -616,13 +558,11 @@ async def list_sessions(client_id: str, user=Depends(current_user)):
     docs = await db.sessions.find({"client_id": client_id}).sort("started_at", -1).to_list(300)
     return [ser(d) for d in docs]
 
-
 def num(v) -> Optional[float]:
     try:
         return float(str(v).replace(",", "."))
     except (TypeError, ValueError):
         return None
-
 
 @api.get("/progress")
 async def progress(client_id: str, user=Depends(current_user)):
@@ -649,53 +589,12 @@ async def progress(client_id: str, user=Depends(current_user)):
             })
     return series
 
-
-# ---------- uploads / media ----------
-@api.post("/upload")
-async def upload(file: UploadFile = File(...), user=Depends(current_user)):
-    data = await file.read()
-    if len(data) > 150 * 1024 * 1024:
-        raise HTTPException(413, "File troppo grande (max 150MB)")
-    ext = (file.filename or "file").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "bin"
-    path = f"{APP_NAME}/uploads/{user['_id']}/{uuid.uuid4()}.{ext}"
-    ctype = file.content_type or "application/octet-stream"
-    try:
-        res = await run_in_threadpool(put_object, path, data, ctype)
-    except requests.HTTPError as e:
-        if e.response is not None and e.response.status_code == 402:
-            raise HTTPException(402, "Spazio di archiviazione esaurito")
-        raise HTTPException(502, "Errore di caricamento")
-    await db.files.insert_one({"path": res["path"], "owner_id": str(user["_id"]), "content_type": ctype,
-                               "size": len(data), "created_at": now_iso(), "is_deleted": False})
-    return {"path": res["path"], "content_type": ctype}
-
-
-@api.get("/files/{path:path}")
-async def download(path: str, token: Optional[str] = None, authorization: str = Header(None)):
-    if token:
-        user = await user_from_token(token)
-    else:
-        user = await current_user(authorization)
-    rec = await db.files.find_one({"path": path, "is_deleted": False})
-    if not rec:
-        raise HTTPException(404, "File non trovato")
-    owner = await db.users.find_one({"_id": oid(rec["owner_id"])})
-    uid = str(user["_id"])
-    same_team = owner is not None and team_id(owner) == team_id(user)
-    allowed = uid == rec["owner_id"] or (same_team and (user["role"] != "client" or owner["role"] != "client"))
-    if not allowed:
-        raise HTTPException(403, "Accesso negato")
-    data, ctype = await run_in_threadpool(get_object, path)
-    return Response(content=data, media_type=rec.get("content_type") or ctype, headers={"Cache-Control": "private, max-age=86400"})
-
-
 class PhotoIn(BaseModel):
     client_id: str
     kind: str  # front | side_left | back | posing
     path: str
     date: str
     pose_name: Optional[str] = ""
-
 
 @api.post("/photos")
 async def create_photo(body: PhotoIn, user=Depends(current_user)):
@@ -705,7 +604,6 @@ async def create_photo(body: PhotoIn, user=Depends(current_user)):
     await db.photos.insert_one(doc)
     return ser(doc)
 
-
 @api.get("/photos")
 async def list_photos(client_id: str, user=Depends(current_user)):
     c = await assert_access(user, client_id)
@@ -714,13 +612,11 @@ async def list_photos(client_id: str, user=Depends(current_user)):
     docs = await db.photos.find({"client_id": client_id}).sort("date", -1).to_list(1000)
     return [ser(d) for d in docs]
 
-
 class VideoIn(BaseModel):
     client_id: str
     path: str
     exercise: str
     note: Optional[str] = ""
-
 
 @api.post("/videos")
 async def create_video(body: VideoIn, user=Depends(current_user)):
@@ -730,13 +626,11 @@ async def create_video(body: VideoIn, user=Depends(current_user)):
     await db.videos.insert_one(doc)
     return ser(doc)
 
-
 @api.get("/videos")
 async def list_videos(client_id: Optional[str] = None, user=Depends(current_user)):
     f = await owner_ids(user, client_id)
     docs = await db.videos.find(f).sort("created_at", -1).to_list(500)
     return [ser(d) for d in docs]
-
 
 async def get_video(vid: str, user: dict):
     v = await db.videos.find_one({"_id": oid(vid)})
@@ -745,13 +639,11 @@ async def get_video(vid: str, user: dict):
     await assert_access(user, v["client_id"])
     return v
 
-
 @api.get("/videos/{vid}")
 async def video_detail(vid: str, user=Depends(current_user)):
     v = ser(await get_video(vid, user))
     v["comments"] = await get_comments("video", vid)
     return v
-
 
 @api.post("/videos/{vid}/comments")
 async def video_comment(vid: str, body: CommentIn, user=Depends(current_user)):
@@ -759,7 +651,6 @@ async def video_comment(vid: str, body: CommentIn, user=Depends(current_user)):
     if user["role"] == "trainer":
         await db.videos.update_one({"_id": oid(vid)}, {"$set": {"reviewed": True}})
     return await add_comment("video", vid, user, body.text)
-
 
 # ---------- nutrition ----------
 @api.get("/food/barcode/{code}")
@@ -777,35 +668,6 @@ async def barcode_lookup(code: str, user=Depends(current_user)):
             "per100": {"kcal": round(n.get("energy-kcal_100g") or 0, 1), "protein": round(n.get("proteins_100g") or 0, 1),
                        "carbs": round(n.get("carbohydrates_100g") or 0, 1), "fat": round(n.get("fat_100g") or 0, 1)}}
 
-
-class AnalyzeIn(BaseModel):
-    image_base64: str
-
-
-@api.post("/food/analyze")
-async def analyze_food(body: AnalyzeIn, user=Depends(current_user)):
-    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent, TextDelta, StreamDone
-    chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"food-{uuid.uuid4()}",
-                   system_message="Sei un nutrizionista esperto. Stimi porzioni e valori nutrizionali da foto di piatti. Rispondi SOLO con JSON valido.").with_model("openai", "gpt-5.5")
-    prompt = ('Analizza il piatto nella foto. Restituisci SOLO JSON: {"name": "nome piatto in italiano", '
-              '"items": [{"name": str, "grams": number}], "kcal": number, "protein": number, "carbs": number, "fat": number, '
-              '"confidence": "alta|media|bassa"}. Valori totali per la porzione visibile.')
-    b64 = body.image_base64.split(",", 1)[-1]
-    text = ""
-    async for ev in chat.stream_message(UserMessage(text=prompt, file_contents=[ImageContent(image_base64=b64)])):
-        if isinstance(ev, TextDelta):
-            text += ev.content
-        elif isinstance(ev, StreamDone):
-            break
-    m = re.search(r"\{.*\}", text, re.S)
-    if not m:
-        raise HTTPException(502, "Analisi non riuscita, riprova")
-    try:
-        return json.loads(m.group(0))
-    except json.JSONDecodeError:
-        raise HTTPException(502, "Analisi non riuscita, riprova")
-
-
 class MealIn(BaseModel):
     client_id: Optional[str] = None
     date: str
@@ -819,7 +681,6 @@ class MealIn(BaseModel):
     source: str = "manual"  # barcode | ai | manual
     photo_path: Optional[str] = None
 
-
 @api.post("/meals")
 async def create_meal(body: MealIn, user=Depends(current_user)):
     cid = str(user["_id"]) if user["role"] == "client" else body.client_id
@@ -829,9 +690,7 @@ async def create_meal(body: MealIn, user=Depends(current_user)):
     await db.meals.insert_one(doc)
     return ser(doc)
 
-
 NUM_KEYS = ("grams", "kcal", "protein", "carbs", "fat")
-
 
 def strip_meal(m: dict, hide: bool) -> dict:
     x = ser(m)
@@ -840,14 +699,12 @@ def strip_meal(m: dict, hide: bool) -> dict:
             x.pop(k, None)
     return x
 
-
 @api.get("/meals")
 async def list_meals(client_id: str, date: str, user=Depends(current_user)):
     c = await assert_access(user, client_id, allow_nutri=True)
     hide = user["role"] == "client" and not visible(c, "nutrition")
     docs = await db.meals.find({"client_id": client_id, "date": date}).sort("created_at", 1).to_list(200)
     return [strip_meal(d, hide) for d in docs]
-
 
 @api.get("/meals/history")
 async def meals_history(client_id: str, user=Depends(current_user)):
@@ -868,7 +725,6 @@ async def meals_history(client_id: str, user=Depends(current_user)):
                 day.pop(k)
     return out
 
-
 class MealUpdateIn(BaseModel):
     name: Optional[str] = None
     grams: Optional[float] = None
@@ -876,7 +732,6 @@ class MealUpdateIn(BaseModel):
     protein: Optional[float] = None
     carbs: Optional[float] = None
     fat: Optional[float] = None
-
 
 @api.put("/meals/{meal_id}")
 async def update_meal(meal_id: str, body: MealUpdateIn, user=Depends(require_staff)):
@@ -890,7 +745,6 @@ async def update_meal(meal_id: str, body: MealUpdateIn, user=Depends(require_sta
     await db.meals.update_one({"_id": oid(meal_id)}, {"$set": upd})
     return ser(await db.meals.find_one({"_id": oid(meal_id)}))
 
-
 @api.delete("/meals/{meal_id}")
 async def delete_meal(meal_id: str, user=Depends(current_user)):
     m = await db.meals.find_one({"_id": oid(meal_id)})
@@ -900,13 +754,11 @@ async def delete_meal(meal_id: str, user=Depends(current_user)):
     await db.meals.delete_one({"_id": oid(meal_id)})
     return {"ok": True}
 
-
 # ---------- nutrition plan / targets / diary comments / team notes ----------
 class NutritionPlanIn(BaseModel):
     targets: dict = {}  # kcal, protein, carbs, fat
     meal_plan: List[dict] = []  # [{meal, items}]
     notes: Optional[str] = ""
-
 
 @api.get("/clients/{client_id}/nutrition")
 async def get_nutrition_plan(client_id: str, user=Depends(current_user)):
@@ -921,7 +773,6 @@ async def get_nutrition_plan(client_id: str, user=Depends(current_user)):
         out["hidden"] = True
     return out
 
-
 @api.put("/clients/{client_id}/nutrition")
 async def set_nutrition_plan(client_id: str, body: NutritionPlanIn, user=Depends(require_staff)):
     await assert_access(user, client_id, allow_nutri=True)
@@ -931,32 +782,27 @@ async def set_nutrition_plan(client_id: str, body: NutritionPlanIn, user=Depends
         "updated_by": user["name"], "updated_at": now_iso()}}, upsert=True)
     return await get_nutrition_plan(client_id, user)
 
-
 @api.get("/diary/{client_id}/{date}/comments")
 async def diary_comments(client_id: str, date: str, user=Depends(current_user)):
     await assert_access(user, client_id, allow_nutri=True)
     return await get_comments("diary", f"{client_id}:{date}")
-
 
 @api.post("/diary/{client_id}/{date}/comments")
 async def diary_comment(client_id: str, date: str, body: CommentIn, user=Depends(current_user)):
     await assert_access(user, client_id, allow_nutri=True)
     return await add_comment("diary", f"{client_id}:{date}", user, body.text)
 
-
 @api.get("/clients/{client_id}/team-notes")
 async def team_notes(client_id: str, user=Depends(require_staff)):
     await assert_access(user, client_id, allow_nutri=True)
     return await get_comments("team", client_id)
-
 
 @api.post("/clients/{client_id}/team-notes")
 async def team_note(client_id: str, body: CommentIn, user=Depends(require_staff)):
     await assert_access(user, client_id, allow_nutri=True)
     return await add_comment("team", client_id, user, body.text)
 
-
-# ---------- subscription packages (no end date, request via WhatsApp) ----------
+# ---------- subscription packages ----------
 DEFAULT_PACKAGES = [
     ("Aiuto esecuzione online", "Solo correzione tecnica, senza scheda.", 25, "mensile", 8, 0, ["8 video check al mese"]),
     ("Aiuto esecuzione online", "Solo correzione tecnica, senza scheda.", 255, "annuale", 100, 0, ["100 video check all'anno", "Risparmi il 15%"]),
@@ -970,7 +816,6 @@ DEFAULT_PACKAGES = [
     ("Coaching completo · 2 lezioni", "Scheda, monitoraggio, misure e 2 lezioni al mese.", 1224, "annuale", 0, 0, ["Schede personalizzate", "24 lezioni all'anno", "Supporto via chat", "Risparmi il 15%"]),
 ]
 
-
 class PackageIn(BaseModel):
     name: str = Field(min_length=1)
     description: Optional[str] = ""
@@ -980,9 +825,7 @@ class PackageIn(BaseModel):
     min_months: int = 0
     features: List[str] = []
 
-
 PKG_LOCK = asyncio.Lock()
-
 
 @api.get("/packages")
 async def list_packages(user=Depends(current_user)):
@@ -1005,7 +848,6 @@ async def list_packages(user=Depends(current_user)):
         out.append(x)
     return out
 
-
 @api.post("/packages")
 async def create_package(body: PackageIn, user=Depends(require_staff)):
     doc = body.model_dump()
@@ -1013,13 +855,11 @@ async def create_package(body: PackageIn, user=Depends(require_staff)):
     await db.packages.insert_one(doc)
     return ser(doc)
 
-
 async def own_package(pid: str, user: dict):
     p = await db.packages.find_one({"_id": oid(pid)})
     if not p or p["owner_id"] != str(user["_id"]):
         raise HTTPException(404, "Pacchetto non trovato")
     return p
-
 
 @api.put("/packages/{pid}")
 async def update_package(pid: str, body: PackageIn, user=Depends(require_staff)):
@@ -1027,21 +867,18 @@ async def update_package(pid: str, body: PackageIn, user=Depends(require_staff))
     await db.packages.update_one({"_id": oid(pid)}, {"$set": body.model_dump()})
     return ser(await db.packages.find_one({"_id": oid(pid)}))
 
-
 @api.delete("/packages/{pid}")
 async def delete_package(pid: str, user=Depends(require_staff)):
     await own_package(pid, user)
     await db.packages.delete_one({"_id": oid(pid)})
     return {"ok": True}
 
-
-# ---------- coach chat (annual full coaching only) ----------
+# ---------- coach chat ----------
 async def chat_access(user: dict, client_id: str) -> dict:
     c = await assert_access(user, client_id)
     if not (c.get("subscription") or {}).get("chat"):
         raise HTTPException(403, "La chat è inclusa nel Coaching completo annuale")
     return c
-
 
 @api.get("/chat/{client_id}")
 async def chat_messages(client_id: str, after: Optional[str] = None, user=Depends(current_user)):
@@ -1054,7 +891,6 @@ async def chat_messages(client_id: str, after: Optional[str] = None, user=Depend
     await db.chat.update_many({"client_id": client_id, "author_role": other, "read": False}, {"$set": {"read": True}})
     return [ser(d) for d in docs]
 
-
 @api.post("/chat/{client_id}")
 async def chat_send(client_id: str, body: CommentIn, user=Depends(current_user)):
     await chat_access(user, client_id)
@@ -1064,7 +900,6 @@ async def chat_send(client_id: str, body: CommentIn, user=Depends(current_user))
            "text": body.text.strip()[:4000], "read": False, "created_at": now_iso()}
     await db.chat.insert_one(doc)
     return ser(doc)
-
 
 @api.get("/chat-unread")
 async def chat_unread(user=Depends(current_user)):
@@ -1079,14 +914,12 @@ async def chat_unread(user=Depends(current_user)):
         out[d["client_id"]] = out.get(d["client_id"], 0) + 1
     return out
 
-
-# ---------- payments (manual, marked by coach) ----------
+# ---------- payments ----------
 class PaymentIn(BaseModel):
     client_id: str
     amount: float = Field(gt=0)
     period: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")  # cycle start date the payment covers
     note: Optional[str] = ""
-
 
 @api.post("/payments")
 async def create_payment(body: PaymentIn, user=Depends(require_trainer)):
@@ -1102,7 +935,6 @@ async def create_payment(body: PaymentIn, user=Depends(require_trainer)):
         raise HTTPException(409, "Rinnovo già segnato come pagato")
     return ser(doc)
 
-
 @api.delete("/payments/{pid}")
 async def delete_payment(pid: str, user=Depends(require_trainer)):
     res = await db.payments.delete_one({"_id": oid(pid), "trainer_id": str(user["_id"])})
@@ -1110,12 +942,10 @@ async def delete_payment(pid: str, user=Depends(require_trainer)):
         raise HTTPException(404, "Pagamento non trovato")
     return {"ok": True}
 
-
 @api.get("/payments")
 async def list_payments(user=Depends(require_trainer)):
     docs = await db.payments.find({"trainer_id": str(user["_id"])}).sort("paid_at", -1).to_list(5000)
     return [ser(d) for d in docs]
-
 
 @api.get("/payments/summary")
 async def payments_summary(user=Depends(require_trainer)):
@@ -1136,12 +966,10 @@ async def payments_summary(user=Depends(require_trainer)):
             totals[k]["count"] += 1
     return list(reversed([totals[k] for k in months]))
 
-
 # ---------- questions (client -> coach) ----------
 class QuestionIn(BaseModel):
     subject: str = Field(min_length=1)
     text: str = Field(min_length=1)
-
 
 @api.post("/questions")
 async def create_question(body: QuestionIn, user=Depends(current_user)):
@@ -1151,7 +979,6 @@ async def create_question(body: QuestionIn, user=Depends(current_user)):
            "text": body.text, "status": "open", "created_at": now_iso(), "updated_at": now_iso()}
     await db.questions.insert_one(doc)
     return ser(doc)
-
 
 @api.get("/questions")
 async def list_questions(user=Depends(current_user)):
@@ -1164,7 +991,6 @@ async def list_questions(user=Depends(current_user)):
     docs = await db.questions.find(f).sort("updated_at", -1).to_list(500)
     return [ser(d) for d in docs]
 
-
 async def get_question(qid: str, user: dict):
     q = await db.questions.find_one({"_id": oid(qid)})
     if not q:
@@ -1172,13 +998,11 @@ async def get_question(qid: str, user: dict):
     await assert_access(user, q["client_id"])
     return q
 
-
 @api.get("/questions/{qid}")
 async def question_detail(qid: str, user=Depends(current_user)):
     q = ser(await get_question(qid, user))
     q["comments"] = await get_comments("question", qid)
     return q
-
 
 @api.post("/questions/{qid}/comments")
 async def question_comment(qid: str, body: CommentIn, user=Depends(current_user)):
@@ -1186,7 +1010,6 @@ async def question_comment(qid: str, body: CommentIn, user=Depends(current_user)
     status = "answered" if user["role"] == "trainer" else "open"
     await db.questions.update_one({"_id": oid(qid)}, {"$set": {"status": status, "updated_at": now_iso()}})
     return await add_comment("question", qid, user, body.text)
-
 
 @api.put("/questions/{qid}/status")
 async def question_status(qid: str, body: StatusIn, user=Depends(current_user)):
@@ -1196,21 +1019,10 @@ async def question_status(qid: str, body: StatusIn, user=Depends(current_user)):
     await db.questions.update_one({"_id": oid(qid)}, {"$set": {"status": body.status}})
     return {"ok": True}
 
-
 app.include_router(api)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-
 @app.on_event("startup")
-async def startup():
+async def create_indexes():
     await db.users.create_index("email", unique=True)
     await db.payments.create_index([("client_id", 1), ("period", 1)], unique=True)
-    try:
-        init_storage()
-    except Exception as e:
-        logger.error(f"Storage init failed: {e}")
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
