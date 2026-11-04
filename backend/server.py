@@ -73,34 +73,6 @@ def oid(s: str) -> ObjectId:
         raise HTTPException(404, "Non trovato")
 
 
-# ---------- storage ----------
-storage_key = None
-
-
-def init_storage():
-    global storage_key
-    if storage_key:
-        return storage_key
-    r = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
-    r.raise_for_status()
-    storage_key = r.json()["storage_key"]
-    return storage_key
-
-
-def put_object(path: str, data: bytes, content_type: str) -> dict:
-    key = init_storage()
-    r = requests.put(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key, "Content-Type": content_type}, data=data, timeout=300)
-    r.raise_for_status()
-    return r.json()
-
-
-def get_object(path: str):
-    key = init_storage()
-    r = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=120)
-    r.raise_for_status()
-    return r.content, r.headers.get("Content-Type", "application/octet-stream")
-
-
 # ---------- auth ----------
 def make_token(user_id: str, role: str) -> str:
     n = datetime.now(timezone.utc)
