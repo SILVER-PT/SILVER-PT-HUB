@@ -36,13 +36,29 @@ export default function Login() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <KeyboardAwareScrollView bottomOffset={24} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 24, paddingTop: insets.top + 40, paddingBottom: insets.bottom + 24, gap: 16 }}>
-        <Image testID="login-logo" source={require("../assets/images/logo-wide-v2.png")} style={{ width: "75%", aspectRatio: 1100 / 275 }} contentFit="contain" />
-        <Laser style={{ marginVertical: 8 }} />
+  <KeyboardAwareScrollView 
+    bottomOffset={24} 
+    keyboardShouldPersistTaps="handled" 
+    contentContainerStyle={{ 
+      padding: 24, 
+      paddingTop: insets.top + 40, 
+      paddingBottom: insets.bottom + 24, 
+      gap: 16 
+    }}
+  >
+    <View style={{ width: "100%", alignItems: "center" }}>
+      <Image 
+        testID="login-logo" 
+        source={require("../assets/images/logo-wide-v2.png")} 
+        style={{ width: "100%", aspectRatio: 1100 / 275 }} 
+        contentFit="contain" 
+      />
+    </View>
+    <Laser style={{ marginVertical: 8 }} />
         <T style={{ fontSize: 26, fontWeight: "900", fontStyle: "italic", textTransform: "uppercase" }}>
           {mode === "login" ? "Bentornato" : "Crea il tuo profilo"}
         </T>
-        <T muted>{mode === "login" ? "Accedi per allenamenti, misure e alimentazione." : "I clienti usano il codice invito del proprio coach."}</T>
+        <T muted>{mode === "login" ? "Accedi per vivere a lungo in un corpo sano" : "I clienti usano il codice invito del proprio coach."}</T>
 
         {mode === "register" && (
           <>
