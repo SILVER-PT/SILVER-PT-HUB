@@ -3,7 +3,6 @@ from fastapi.responses import Response
 from fastapi.concurrency import run_in_threadpool
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel, Field
@@ -12,12 +11,14 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import os, logging, uuid, json, re, math, asyncio, secrets as pysecrets
 import bcrypt, jwt, requests, httpx
+from motor.motor_asyncio import AsyncIOMotorClient
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 APP_NAME = os.environ.get('APP_NAME', 'silver-pt')
-STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
+STORAGE_BASE = os.environ.get('STORAGE_BASE', '')
+STORAGE_URL = STORAGE_BASE.rstrip('/') + "/objstore/api/v1/storage"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
