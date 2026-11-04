@@ -24,8 +24,10 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 @app.on_event("startup")
 async def startup_db_client():
+    global db
     app.mongodb_client = AsyncIOMotorClient(os.environ["MONGO_URL"])
     app.db = app.mongodb_client[os.environ.get("DB_NAME", "silver_pt")]
+    db = app.db
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
