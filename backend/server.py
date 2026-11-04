@@ -16,9 +16,6 @@ import bcrypt, jwt, requests, httpx
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-client = AsyncIOMotorClient(os.environ['MONGO_URL'])
-db = client[os.environ['DB_NAME']]
-JWT_SECRET = os.environ['JWT_SECRET']
 APP_NAME = os.environ.get('APP_NAME', 'silver-pt')
 STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
 
