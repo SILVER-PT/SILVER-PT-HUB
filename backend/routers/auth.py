@@ -5,23 +5,30 @@ import secrets
 import resend
 import os
 
+
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
-# Legge la chiave API in modo sicuro dalle variabili d'ambiente di Render
-resend.api_key = os.getenv("RESEND_API_KEY")
+API_KEY = os.getenv("RESEND_API_KEY")
+if not API_KEY:
+    print("⚠️ ATTENZIONE: RESEND_API_KEY non impostata!")
+else:
+    resend.api_key = API_KEY
+
 
 class ResetPasswordRequest(BaseModel):
     email: EmailStr
 
+
 @router.post("/reset-password")
 async def reset_password(data: ResetPasswordRequest):
+    if not API_KEY:
+        raise HTTPException(status_code=500, detail="RESEND_API_KEY mancante sul server.")
+
     temp_password = secrets.token_urlsafe(8)
-    
-    # TODO: Ricordati di aggiornare la password nel tuo database (hashata)
-    
+
     try:
         params = {
-            "from": "SILVER-PT <onboarding@resend.dev>",  # Puoi usare questo dominio di test di Resend
+            "from": "SILVER-PT <onboarding@resend.dev>",
             "to": [data.email],
             "subject": "Reset Password - SILVER-PT",
             "html": f"""
@@ -33,9 +40,11 @@ async def reset_password(data: ResetPasswordRequest):
                 </div>
             """,
         }
-        
+
         response = resend.Emails.send(params)
+        print(f"✅ Email inviata a {data.email} — ID: {response}")
         return {"success": True, "message": "Password temporanea inviata con successo."}
-        
+
     except Exception as e:
+        print(f"❌ Errore Resend: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Errore nell'invio dell'email: {str(e)}")
