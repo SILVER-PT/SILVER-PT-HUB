@@ -169,7 +169,85 @@ async def login(body: LoginIn):
 @api.get("/auth/me")
 async def me(user=Depends(current_user)):
     return ser(user)
+# ---------- reset password ----------
+class ResetPasswordIn(BaseModel):
+    email: str
 
+
+@api.post("/auth/reset-password")
+async def reset_password(body: ResetPasswordIn):
+    api_key = os.environ.get("RESEND_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="Il servizio email non è configurato sul server."
+        )
+
+    email = body.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=422, detail="Indirizzo email non valido.")
+
+    # Risposta generica per non rivelare se un indirizzo è registrato.
+    user = await db.users.find_one({"email": email})
+    if not user:
+        return {
+            "success": True,
+            "message": "Se l'indirizzo è associato a un account, riceverai un'email."
+        }
+
+    temp_password = pysecrets.token_urlsafe(8)
+    sender = os.environ.get(
+        "RESEND_FROM",
+        "SILVER-PT <onboarding@resend.dev>"
+    )
+
+    try:
+        resend.api_key = api_key
+
+        # Invia prima l'email. La password nel database viene aggiornata
+        # solo se Resend accetta l'invio.
+        await run_in_threadpool(
+            resend.Emails.send,
+            {
+                "from": sender,
+                "to": [email],
+                "subject": "Reset password - SILVER-PT",
+                "html": f"""
+                    <div style="font-family: Arial, sans-serif; color: #333;">
+                        <h2>Richiesta di reset password</h2>
+                        <p>La tua password temporanea per accedere a
+                        <b>SILVER-PT</b> è:</p>
+                        <p style="font-size: 20px; font-weight: bold;">
+                            {temp_password}
+                        </p>
+                        <p>Ti consigliamo di cambiarla dopo aver effettuato
+                        l'accesso.</p>
+                    </div>
+                """,
+            },
+        )
+
+        password_hash = bcrypt.hashpw(
+            temp_password.encode("utf-8"),
+            bcrypt.gensalt()
+        ).decode("utf-8")
+
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {"$set": {"password_hash": password_hash}}
+        )
+
+        return {
+            "success": True,
+            "message": "Se l'indirizzo è associato a un account, riceverai un'email."
+        }
+
+    except Exception:
+        logger.exception("Invio o aggiornamento della password temporanea non riuscito")
+        raise HTTPException(
+            status_code=502,
+            detail="Non è stato possibile inviare l'email. Riprova più tardi."
+        )
 # ---------- profile / clients ----------
 class ProfileIn(BaseModel):
     name: Optional[str] = None
