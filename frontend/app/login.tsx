@@ -1,89 +1,97 @@
-import { useState } from "react";
-import { View } from "react-native";
-import { Image } from "expo-image";
-import { useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
-import { useAuth } from "@/src/auth";
-import { Btn, Chip, ErrorText, Field, Laser, T } from "@/src/ui";
-import { useTheme } from "@/src/theme";
+// frontend/app/login.tsx
+import React, { useState } from 'react';
+import { View, TextInput, StyleSheet, ActivityIndicator, Alert, Text, Pressable, Image } from 'react-native';
+import { useRouter } from 'expo-router';
 
-export default function Login() {
-  const { signIn } = useAuth();
+export default function LoginScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [role, setRole] = useState<"client" | "trainer" | "nutritionist">("client");
-  const [f, setF] = useState({ name: "", email: "", password: "", invite_code: "" });
-  const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
-  const set = (k: string) => (v: string) => setF((p) => ({ ...p, [k]: v }));
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const submit = async () => {
-    setErr("");
-    setBusy(true);
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Errore', 'Inserisci email e password.');
+      return;
+    }
+    setLoading(true);
     try {
-      if (mode === "login") await signIn("/auth/login", { email: f.email, password: f.password });
-      else await signIn("/auth/register", { ...f, role });
-      router.replace("/(tabs)");
-    } catch (e: any) {
-      setErr(e.message);
+      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        // Reindirizza alla home dopo il login riuscito
+        router.replace('/');
+      } else {
+        Alert.alert('Errore', data.detail || 'Credenziali non valide.');
+      }
+    } catch (err) {
+      Alert.alert('Errore di connessione', 'Verifica la connessione al server.');
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.surface }}>
-  <KeyboardAwareScrollView 
-    bottomOffset={24} 
-    keyboardShouldPersistTaps="handled" 
-    contentContainerStyle={{ 
-      padding: 24, 
-      paddingTop: insets.top + 40, 
-      paddingBottom: insets.bottom + 24, 
-      gap: 16 
-    }}
-  >
-    <View style={{ width: "100%", alignItems: "center" }}>
-      <Image 
-        testID="login-logo" 
-        source={require("../assets/images/logo-v3.png")} 
-        style={{ width: "100%", aspectRatio: 1100 / 275 }} 
-        contentFit="contain" 
-      />
-    </View>
-    <Laser style={{ marginVertical: 8 }} />
-        <T style={{ fontSize: 26, fontWeight: "900", fontStyle: "italic", textTransform: "uppercase" }}>
-          {mode === "login" ? "Bentornato" : "Crea il tuo profilo"}
-        </T>
-        <T muted>{mode === "login" ? "Accedi per vivere a lungo in un corpo sano" : "I clienti usano il codice invito del proprio coach."}</T>
-
-        {mode === "register" && (
-          <>
-            <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-              <Chip testID="role-client-chip" label="Sono un cliente" active={role === "client"} onPress={() => setRole("client")} />
-              <Chip testID="role-trainer-chip" label="Sono il coach" active={role === "trainer"} onPress={() => setRole("trainer")} />
-              <Chip testID="role-nutritionist-chip" label="Nutrizionista / Dietista" active={role === "nutritionist"} onPress={() => setRole("nutritionist")} />
-            </View>
-            <Field testID="register-name-input" label="Nome e cognome" value={f.name} onChangeText={set("name")} />
-            {role !== "trainer" && (
-              <Field testID="register-invite-input" label="Codice invito coach" autoCapitalize="characters" value={f.invite_code} onChangeText={set("invite_code")} />
-            )}
-          </>
-        )}
-        <Field testID="login-email-input" label="Email" autoCapitalize="none" keyboardType="email-address" value={f.email} onChangeText={set("email")} />
-        <Field testID="login-password-input" label="Password" secureTextEntry value={f.password} onChangeText={set("password")} />
-        <ErrorText text={err} />
-        <Btn testID="login-submit-button" title={mode === "login" ? "Accedi" : "Registrati"} onPress={submit} loading={busy} />
-        <Btn
-          testID="login-toggle-mode-button"
-          variant="ghost"
-          title={mode === "login" ? "Non hai un account? Registrati" : "Hai già un account? Accedi"}
-          onPress={() => { setMode(mode === "login" ? "register" : "login"); setErr(""); }}
+    <View style={styles.container}>
+      <View style={styles.logoContainer}>
+        <Image
+          source={require('../assets/images/logo-wide-v2.png')}
+          style={styles.logo}
+          resizeMode="contain"
         />
-      </KeyboardAwareScrollView>
+      </View>
+
+      <Text style={styles.title}>ACCEDI A SILVER-PT</Text>
+
+      <TextInput
+        style={styles.input}
+        placeholder="Email"
+        placeholderTextColor="#666"
+        autoCapitalize="none"
+        keyboardType="email-address"
+        value={email}
+        onChangeText={setEmail}
+      />
+
+      <TextInput
+        style={styles.input}
+        placeholder="Password"
+        placeholderTextColor="#666"
+        secureTextEntry
+        value={password}
+        onChangeText={setPassword}
+      />
+
+      {loading ? (
+        <ActivityIndicator color="#ff0000" style={{ marginVertical: 12 }} />
+      ) : (
+        <Pressable style={styles.primaryButton} onPress={handleLogin}>
+          <Text style={styles.primaryButtonText}>ACCEDI</Text>
+        </Pressable>
+      )}
+
+      {/* Pulsante / Link per Password Dimenticata */}
+      <Pressable style={styles.forgotButton} onPress={() => router.push('/forgot-password')}>
+        <Text style={styles.forgotButtonText}>Password dimenticata?</Text>
+      </Pressable>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#000', padding: 24, justifyContent: 'center', gap: 16 },
+  logoContainer: { width: '100%', alignItems: 'center', marginBottom: 10 },
+  logo: { width: '75%', height: 70 },
+  title: { fontSize: 22, fontWeight: '900', color: '#fff', textAlign: 'center', marginBottom: 10 },
+  input: { backgroundColor: '#181818', color: '#fff', padding: 14, borderRadius: 8, borderWidth: 1, borderColor: '#333' },
+  primaryButton: { backgroundColor: '#ff0000', padding: 14, borderRadius: 8, alignItems: 'center', marginTop: 8 },
+  primaryButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  forgotButton: { alignItems: 'center', marginTop: 12 },
+  forgotButtonText: { color: '#aaa', fontSize: 14, textDecorationLine: 'underline' },
+});
