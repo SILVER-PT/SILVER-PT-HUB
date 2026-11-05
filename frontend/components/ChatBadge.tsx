@@ -1,10 +1,9 @@
 // frontend/components/ChatBadge.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 
-// Configurazione gestione notifiche push in background/foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -21,12 +20,8 @@ export default function ChatBadge({ unreadCount }: ChatBadgeProps) {
   const router = useRouter();
 
   useEffect(() => {
-    // Richiesta permessi notifiche push all'avvio
     async function registerForPush() {
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== 'granted') {
-        console.log('Permesso notifiche push negato.');
-      }
+      await Notifications.requestPermissionsAsync();
     }
     registerForPush();
   }, []);
