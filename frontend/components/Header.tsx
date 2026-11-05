@@ -5,7 +5,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-na
 import { useRouter } from 'expo-router';
 
 interface HeaderProps {
-  userAvatarUrl?: string; // Foto profilo utente caricata al login
+  userAvatarUrl?: string;
 }
 
 export default function Header({ userAvatarUrl }: HeaderProps) {
@@ -14,7 +14,6 @@ export default function Header({ userAvatarUrl }: HeaderProps) {
   const [menuVisible, setMenuVisible] = useState(false);
   const flipRotation = useSharedValue(0);
 
-  // Animazione capovolgimento (0 -> 180 gradi)
   const handlePressOrHover = () => {
     const nextState = !isFlipped;
     setIsFlipped(nextState);
@@ -37,7 +36,6 @@ export default function Header({ userAvatarUrl }: HeaderProps) {
 
   const handleLogout = () => {
     setMenuVisible(false);
-    // Inserisci qui la pulizia del token/stato di autenticazione
     router.replace('/login');
   };
 
@@ -45,7 +43,6 @@ export default function Header({ userAvatarUrl }: HeaderProps) {
     <View style={styles.headerContainer}>
       <Text style={styles.brandTitle}>SILVER-PT</Text>
 
-      {/* Contenitore Avatar / Logo flippabile a destra */}
       <Pressable onPress={handlePressOrHover} style={styles.avatarWrapper}>
         <Animated.View style={[styles.avatarBox, frontAnimatedStyle]}>
           <Image
@@ -68,7 +65,6 @@ export default function Header({ userAvatarUrl }: HeaderProps) {
         </Animated.View>
       </Pressable>
 
-      {/* Menu a tendina Gestione Account */}
       <Modal visible={menuVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={() => setMenuVisible(false)}>
           <View style={styles.modalOverlay}>
