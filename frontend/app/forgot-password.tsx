@@ -1,7 +1,6 @@
 // frontend/app/forgot-password.tsx
 import React, { useState } from 'react';
-import { View, TextInput, StyleSheet, ActivityIndicator, Alert, Text } from 'react-native';
-import { Button } from '@/components/Button';
+import { View, TextInput, StyleSheet, ActivityIndicator, Alert, Text, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 
 export default function ForgotPasswordScreen() {
@@ -55,10 +54,14 @@ export default function ForgotPasswordScreen() {
       {loading ? (
         <ActivityIndicator color="#ff0000" style={{ marginVertical: 12 }} />
       ) : (
-        <Button title="INVIA PASSWORD TEMPORANEA" onPress={handleResetPassword} />
+        <Pressable style={styles.primaryButton} onPress={handleResetPassword}>
+          <Text style={styles.primaryButtonText}>INVIA PASSWORD TEMPORANEA</Text>
+        </Pressable>
       )}
 
-      <Button title="Torna al Login" onPress={() => router.back()} style={styles.secondaryBtn} />
+      <Pressable style={styles.secondaryButton} onPress={() => router.back()}>
+        <Text style={styles.secondaryButtonText}>Torna al Login</Text>
+      </Pressable>
     </View>
   );
 }
@@ -68,5 +71,8 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '900', color: '#fff', textAlign: 'center' },
   subtitle: { fontSize: 14, color: '#aaa', textAlign: 'center' },
   input: { backgroundColor: '#181818', color: '#fff', padding: 14, borderRadius: 8, borderWidth: 1, borderColor: '#333' },
-  secondaryBtn: { backgroundColor: 'transparent', marginTop: 8 },
+  primaryButton: { backgroundColor: '#ff0000', padding: 14, borderRadius: 8, alignItems: 'center', marginTop: 8 },
+  primaryButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  secondaryButton: { padding: 12, alignItems: 'center', marginTop: 4 },
+  secondaryButtonText: { color: '#aaa', fontSize: 14 },
 });
