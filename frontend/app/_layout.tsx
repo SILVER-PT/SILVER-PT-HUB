@@ -1,5 +1,22 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+// frontend/app/_layout.tsx
+import { Stack } from 'expo-router';
+import React from 'react';
+
+export default function RootLayout() {
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        animation: 'fade', // Previene il ricaricamento forzato o crash tra schede web/mobile
+        detachInactiveScreens: false, // Mantiene lo stato attivo prevenendo il messaggio di reload
+      }}
+    >
+      <Stack.Screen name="index" options={{ title: 'Home' }} />
+      <Stack.Screen name="login" />
+      <Stack.Screen name="forgot-password" />
+    </Stack>);
+
 import { StatusBar } from "expo-status-bar";
 import { LogBox, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
