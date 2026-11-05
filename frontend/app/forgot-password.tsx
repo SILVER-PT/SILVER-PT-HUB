@@ -1,7 +1,6 @@
 // frontend/app/forgot-password.tsx
 import React, { useState } from 'react';
-import { View, TextInput, StyleSheet, ActivityIndicator, Alert } from 'react-native';
-import { Text as T } from '@/components/ThemedText';
+import { View, TextInput, StyleSheet, ActivityIndicator, Alert, Text } from 'react-native';
 import { Button } from '@/components/Button';
 import { useRouter } from 'expo-router';
 
@@ -29,7 +28,6 @@ export default function ForgotPasswordScreen() {
         Alert.alert('Email inviata', 'Abbiamo inviato una password temporanea al tuo indirizzo email.');
         router.push('/login');
       } else {
-        // Usiamo i backticks `` per evitare qualsiasi errore con l'apostrofo
         Alert.alert('Errore', data.detail || `Impossibile inviare l'email di reset.`);
       }
     } catch (err) {
@@ -41,8 +39,8 @@ export default function ForgotPasswordScreen() {
 
   return (
     <View style={styles.container}>
-      <T style={styles.title}>RECUPERA PASSWORD</T>
-      <T style={styles.subtitle}>Inserisci l'email associata al tuo account per ricevere una password temporanea.</T>
+      <Text style={styles.title}>RECUPERA PASSWORD</Text>
+      <Text style={styles.subtitle}>Inserisci l'email associata al tuo account per ricevere una password temporanea.</Text>
 
       <TextInput
         style={styles.input}
