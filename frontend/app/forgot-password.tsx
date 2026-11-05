@@ -29,7 +29,7 @@ export default function ForgotPasswordScreen() {
         Alert.alert('Email inviata', 'Abbiamo inviato una password temporanea al tuo indirizzo email.');
         router.push('/login');
       } else {
-        Alert.alert('Errore', data.detail || 'Impossibile inviare l'email di reset.');
+        Alert.alert('Errore', data.detail || `Impossibile inviare l'email di reset.`);
       }
     } catch (err) {
       Alert.alert('Errore di connessione', 'Verifica la connessione al server.');
