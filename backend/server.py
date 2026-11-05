@@ -11,6 +11,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import os, logging, uuid, json, re, math, asyncio, secrets as pysecrets
 import bcrypt, jwt, requests, httpx
+import resend
 from motor.motor_asyncio import AsyncIOMotorClient
 
 ROOT_DIR = Path(__file__).parent
