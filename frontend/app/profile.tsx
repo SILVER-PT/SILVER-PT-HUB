@@ -6,8 +6,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   // Campi del profilo e credenziali
   const [name, setName] = useState('');
@@ -18,6 +18,7 @@ export default function ProfileScreen() {
   
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
 
   useEffect(() => {
     loadUserData();
@@ -40,6 +41,7 @@ export default function ProfileScreen() {
   };
 
   const handleSaveChanges = async () => {
+    setSuccessMessage('');
     setSaving(true);
     try {
       const token = await AsyncStorage.getItem('token');
@@ -54,10 +56,15 @@ export default function ProfileScreen() {
         }
       };
 
-      // Se l'utente vuole cambiare password, la includiamo
+      // Validazione e gestione cambio password
       if (newPassword.trim()) {
         if (!currentPassword.trim()) {
           Alert.alert('Attenzione', 'Inserisci la password attuale per impostarne una nuova.');
+          setSaving(false);
+          return;
+        }
+        if (newPassword !== confirmNewPassword) {
+          Alert.alert('Attenzione', 'Le nuove password non coincidono. Verificale.');
           setSaving(false);
           return;
         }
@@ -66,7 +73,7 @@ export default function ProfileScreen() {
       }
 
       const response = await fetch(`${backendUrl}/api/auth/me`, {
-        method: 'PUT', // o PATCH a seconda di come hai strutturato l'endpoint nel backend
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
@@ -77,11 +84,25 @@ export default function ProfileScreen() {
       const data = await response.json();
 
       if (response.ok) {
-        // Aggiorna i dati salvati in locale
-        await AsyncStorage.setItem('user', JSON.stringify(data.user || data));
-        Alert.alert('Successo', 'Profilo aggiornato con successo!');
+        const updatedUser = data.user || data;
+        
+        // 1. Aggiorna i dati salvati in locale su AsyncStorage
+        await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+        
+        // 2. Aggiorna immediatamente lo stato locale per riflettere le modifiche a schermo senza refresh
+        setName(updatedUser.name || '');
+        setEmail(updatedUser.email || '');
+        setWhatsapp(updatedUser.staff?.whatsapp || '');
+        setTitle(updatedUser.staff?.title || '');
+        setBio(updatedUser.staff?.bio || '');
+
+        // 3. Pulisci i campi delle password
         setCurrentPassword('');
         setNewPassword('');
+        setConfirmNewPassword('');
+
+        // 4. Mostra il messaggio visivo di conferma
+        setSuccessMessage('Profilo aggiornato con successo!');
       } else {
         Alert.alert('Errore', data.detail || 'Impossibile aggiornare il profilo.');
       }
@@ -101,6 +122,13 @@ export default function ProfileScreen() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.headerTitle}>GESTIONE PROFILO</Text>
+
+      {/* Messaggio visivo di conferma */}
+      {successMessage ? (
+        <View style={styles.successBanner}>
+          <Text style={styles.successBannerText}>{successMessage}</Text>
+        </View>
+      ) : null}
 
       <View style={styles.section}>
         <Text style={styles.label}>Nome Completo</Text>
@@ -170,6 +198,16 @@ export default function ProfileScreen() {
           placeholder="Lascia vuoto per non cambiarla"
           placeholderTextColor="#666"
         />
+
+        <Text style={styles.label}>Ripeti Nuova Password</Text>
+        <TextInput
+          style={styles.input}
+          secureTextEntry
+          value={confirmNewPassword}
+          onChangeText={setConfirmNewPassword}
+          placeholder="Conferma nuova password"
+          placeholderTextColor="#666"
+        />
       </View>
 
       {saving ? (
@@ -194,6 +232,8 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: { backgroundColor: '#000', padding: 24, gap: 16, paddingBottom: 40 },
   headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff', textAlign: 'center', marginBottom: 10 },
+  successBanner: { backgroundColor: '#112818', borderWidth: 1, borderColor: '#2ecc71', padding: 12, borderRadius: 8, alignItems: 'center' },
+  successBannerText: { color: '#2ecc71', fontWeight: 'bold', fontSize: 14 },
   section: { backgroundColor: '#121212', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#222', gap: 10 },
   sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#fff', marginBottom: 4 },
   label: { color: '#aaa', fontSize: 13, fontWeight: '600' },
