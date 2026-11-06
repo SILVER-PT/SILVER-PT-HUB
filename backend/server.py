@@ -11,9 +11,6 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import os, logging, uuid, json, re, math, asyncio, secrets as pysecrets
 import bcrypt, jwt, requests, httpx
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from motor.motor_asyncio import AsyncIOMotorClient
 
 ROOT_DIR = Path(__file__).parent
@@ -26,6 +23,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+# Configurazione CORS per permettere le chiamate da Vercel
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -33,10 +32,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 @app.on_event("startup")
 async def startup_db_client():
     global db
-    app.mongodb_client = AsyncIOMotorClient(os.environ["MONGO_URL"])
+    mongo_url = os.environ.get("MONGO_URL") or os.environ.get("MONGO_URI", "mongodb://localhost:27017")
+    app.mongodb_client = AsyncIOMotorClient(mongo_url)
     app.db = app.mongodb_client[os.environ.get("DB_NAME", "silver_pt")]
     db = app.db
 
@@ -178,11 +179,8 @@ async def login(body: LoginIn):
 async def me(user=Depends(current_user)):
     return ser(user)
 
-# ---------- reset password (Gmail SMTP) ----------
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SMTP_EMAIL = os.getenv("SMTP_EMAIL", "noreply.silver.pt@gmail.com")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+# ---------- reset password (Brevo API) ----------
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
 
 class ResetPasswordIn(BaseModel):
     email: str
@@ -193,7 +191,6 @@ async def reset_password(body: ResetPasswordIn):
     if not email or "@" not in email:
         raise HTTPException(status_code=422, detail="Indirizzo email non valido.")
 
-    # Risposta generica per non rivelare se un indirizzo è registrato.
     user = await db.users.find_one({"email": email})
     if not user:
         return {
@@ -204,32 +201,33 @@ async def reset_password(body: ResetPasswordIn):
     temp_password = pysecrets.token_urlsafe(8)
 
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "Reset password - SILVER-PT"
-        msg["From"] = f"SILVER-PT <{SMTP_EMAIL}>"
-        msg["To"] = email
-
-        html_content = f"""
-        <div style="font-family: Arial, sans-serif; color: #ffffff; background-color: #111111; padding: 24px; border-radius: 8px; border: 1px solid #333333;">
-            <h2 style="color: #ff0000; margin-bottom: 16px;">SILVER-PT</h2>
-            <p style="font-size: 15px; color: #dddddd;">Hai richiesto di reimpostare la password per il tuo account.</p>
-            <p style="font-size: 14px; color: #aaaaaa;">Usa la seguente password temporanea per accedere:</p>
-            <div style="background-color: #222222; border: 1px solid #ff0000; padding: 14px; font-size: 20px; font-weight: bold; letter-spacing: 2px; color: #ffffff; display: inline-block; border-radius: 6px; margin: 16px 0;">
-                {temp_password}
+        url = "https://api.brevo.com/v3/smtp/email"
+        headers = {
+            "accept": "application/json",
+            "api-key": BREVO_API_KEY,
+            "content-type": "application/json"
+        }
+        payload = {
+            "sender": {"name": "SILVER-PT", "email": "noreply.silver.pt@gmail.com"},
+            "to": [{"email": email}],
+            "subject": "Reset password - SILVER-PT",
+            "htmlContent": f"""
+            <div style="font-family: Arial, sans-serif; color: #ffffff; background-color: #111111; padding: 24px; border-radius: 8px; border: 1px solid #333333;">
+                <h2 style="color: #ff0000; margin-bottom: 16px;">SILVER-PT</h2>
+                <p style="font-size: 15px; color: #dddddd;">Hai richiesto di reimpostare la password per il tuo account.</p>
+                <p style="font-size: 14px; color: #aaaaaa;">Usa la seguente password temporanea per accedere:</p>
+                <div style="background-color: #222222; border: 1px solid #ff0000; padding: 14px; font-size: 20px; font-weight: bold; letter-spacing: 2px; color: #ffffff; display: inline-block; border-radius: 6px; margin: 16px 0;">
+                    {temp_password}
+                </div>
+                <p style="font-size: 13px; color: #888888; margin-top: 20px;">Una volta effettuato l'accesso, ti consigliamo di modificare subito la password dalle impostazioni del tuo profilo.</p>
             </div>
-            <p style="font-size: 13px; color: #888888; margin-top: 20px;">Una volta effettuato l'accesso, ti consigliamo di modificare subito la password dalle impostazioni del tuo profilo.</p>
-        </div>
-        """
-        msg.attach(MIMEText(html_content, "html"))
+            """
+        }
 
-        def send_email_sync():
-            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-                server.starttls()
-                server.login(SMTP_EMAIL, SMTP_PASSWORD)
-                server.sendmail(SMTP_EMAIL, email, msg.as_string())
-
-        # Esegue l'invio SMTP in un thread separato per non bloccare l'evento asincrono
-        await run_in_threadpool(send_email_sync)
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, headers=headers, timeout=15.0)
+            if response.status_code not in (200, 201):
+                raise Exception(f"Errore API Brevo: {response.text}")
 
         password_hash = bcrypt.hashpw(
             temp_password.encode("utf-8"),
