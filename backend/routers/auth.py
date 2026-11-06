@@ -143,7 +143,22 @@ async def reset_password(data: ResetPasswordRequest):
         raise HTTPException(status_code=500, detail=f"Errore durante l'invio dell'email: {str(e)}")
 
 
-# --- ENDPOINT: AGGIORNAMENTO PROFILO E CREDENZIALI ---
+# --- ENDPOINT: GET /me (Lettura profilo) ---
+@router.get("/me")
+async def get_my_profile(current_user: dict = Depends(get_current_user)):
+    user_response = {
+        "id": str(current_user["_id"]),
+        "email": current_user["email"],
+        "name": current_user.get("name", ""),
+        "role": current_user.get("role", "trainer"),
+        "created_at": str(current_user.get("created_at", "")),
+        "invite_code": current_user.get("invite_code", ""),
+        "staff": current_user.get("staff", {"whatsapp": "", "bio": "", "title": ""})
+    }
+    return user_response
+
+
+# --- ENDPOINT: PUT /me (Aggiornamento profilo e password) ---
 @router.put("/me")
 async def update_profile(data: UserUpdate, current_user: dict = Depends(get_current_user)):
     update_data = {}
