@@ -26,7 +26,7 @@ export default function LoginScreen() {
 
       const data = await response.json();
       if (response.ok) {
-        // Salva il token e i dati utente in modo persistente sul dispositivo
+        // Salvataggio corretto: il token è una stringa, l'utente è un oggetto JSON
         await AsyncStorage.setItem('token', data.access_token);
         if (data.user) {
           await AsyncStorage.setItem('user', JSON.stringify(data.user));
@@ -38,6 +38,7 @@ export default function LoginScreen() {
         Alert.alert('Errore', data.detail || 'Credenziali non valide.');
       }
     } catch (err) {
+      console.error('Errore di login:', err);
       Alert.alert('Errore di connessione', 'Verifica la connessione al server.');
     } finally {
       setLoading(false);
