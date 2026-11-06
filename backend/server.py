@@ -11,7 +11,9 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import os, logging, uuid, json, re, math, asyncio, secrets as pysecrets
 import bcrypt, jwt, requests, httpx
-import resend
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from motor.motor_asyncio import AsyncIOMotorClient
 
 ROOT_DIR = Path(__file__).parent
@@ -169,20 +171,18 @@ async def login(body: LoginIn):
 @api.get("/auth/me")
 async def me(user=Depends(current_user)):
     return ser(user)
-# ---------- reset password ----------
+
+# ---------- reset password (Gmail SMTP) ----------
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SMTP_EMAIL = os.getenv("SMTP_EMAIL", "noreply.silver.pt@gmail.com")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+
 class ResetPasswordIn(BaseModel):
     email: str
 
-
 @api.post("/auth/reset-password")
 async def reset_password(body: ResetPasswordIn):
-    api_key = os.environ.get("RESEND_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=500,
-            detail="Il servizio email non è configurato sul server."
-        )
-
     email = body.email.strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=422, detail="Indirizzo email non valido.")
@@ -196,36 +196,34 @@ async def reset_password(body: ResetPasswordIn):
         }
 
     temp_password = pysecrets.token_urlsafe(8)
-    sender = os.environ.get(
-        "RESEND_FROM",
-        "SILVER-PT <onboarding@resend.dev>"
-    )
 
     try:
-        resend.api_key = api_key
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Reset password - SILVER-PT"
+        msg["From"] = f"SILVER-PT <{SMTP_EMAIL}>"
+        msg["To"] = email
 
-        # Invia prima l'email. La password nel database viene aggiornata
-        # solo se Resend accetta l'invio.
-        await run_in_threadpool(
-            resend.Emails.send,
-            {
-                "from": sender,
-                "to": [email],
-                "subject": "Reset password - SILVER-PT",
-                "html": f"""
-                    <div style="font-family: Arial, sans-serif; color: #333;">
-                        <h2>Richiesta di reset password</h2>
-                        <p>La tua password temporanea per accedere a
-                        <b>SILVER-PT</b> è:</p>
-                        <p style="font-size: 20px; font-weight: bold;">
-                            {temp_password}
-                        </p>
-                        <p>Ti consigliamo di cambiarla dopo aver effettuato
-                        l'accesso.</p>
-                    </div>
-                """,
-            },
-        )
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; color: #ffffff; background-color: #111111; padding: 24px; border-radius: 8px; border: 1px solid #333333;">
+            <h2 style="color: #ff0000; margin-bottom: 16px;">SILVER-PT</h2>
+            <p style="font-size: 15px; color: #dddddd;">Hai richiesto di reimpostare la password per il tuo account.</p>
+            <p style="font-size: 14px; color: #aaaaaa;">Usa la seguente password temporanea per accedere:</p>
+            <div style="background-color: #222222; border: 1px solid #ff0000; padding: 14px; font-size: 20px; font-weight: bold; letter-spacing: 2px; color: #ffffff; display: inline-block; border-radius: 6px; margin: 16px 0;">
+                {temp_password}
+            </div>
+            <p style="font-size: 13px; color: #888888; margin-top: 20px;">Una volta effettuato l'accesso, ti consigliamo di modificare subito la password dalle impostazioni del tuo profilo.</p>
+        </div>
+        """
+        msg.attach(MIMEText(html_content, "html"))
+
+        def send_email_sync():
+            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+                server.starttls()
+                server.login(SMTP_EMAIL, SMTP_PASSWORD)
+                server.sendmail(SMTP_EMAIL, email, msg.as_string())
+
+        # Esegue l'invio SMTP in un thread separato per non bloccare l'evento asincrono
+        await run_in_threadpool(send_email_sync)
 
         password_hash = bcrypt.hashpw(
             temp_password.encode("utf-8"),
@@ -248,6 +246,7 @@ async def reset_password(body: ResetPasswordIn):
             status_code=502,
             detail="Non è stato possibile inviare l'email. Riprova più tardi."
         )
+
 # ---------- profile / clients ----------
 class ProfileIn(BaseModel):
     name: Optional[str] = None
@@ -552,7 +551,7 @@ async def update_plan(plan_id: str, body: PlanIn, user=Depends(require_trainer))
         raise HTTPException(404, "Scheda non trovata")
     await assert_access(user, p["client_id"])
     await db.plans.update_one({"_id": oid(plan_id)}, {"$set": {"name": body.name, "notes": body.notes, "days": body.days,
-                                                               "approach": body.approach, "active": body.active, "updated_at": now_iso()}})
+                                                             "approach": body.approach, "active": body.active, "updated_at": now_iso()}})
     return ser(await db.plans.find_one({"_id": oid(plan_id)}))
 
 @api.get("/plans")
@@ -778,330 +777,4 @@ def strip_meal(m: dict, hide: bool) -> dict:
             x.pop(k, None)
     return x
 
-@api.get("/meals")
-async def list_meals(client_id: str, date: str, user=Depends(current_user)):
-    c = await assert_access(user, client_id, allow_nutri=True)
-    hide = user["role"] == "client" and not visible(c, "nutrition")
-    docs = await db.meals.find({"client_id": client_id, "date": date}).sort("created_at", 1).to_list(200)
-    return [strip_meal(d, hide) for d in docs]
-
-@api.get("/meals/history")
-async def meals_history(client_id: str, user=Depends(current_user)):
-    """All logged foods grouped by day, newest first, with daily totals."""
-    c = await assert_access(user, client_id, allow_nutri=True)
-    hide = user["role"] == "client" and not visible(c, "nutrition")
-    docs = await db.meals.find({"client_id": client_id}).sort([("date", -1), ("created_at", 1)]).to_list(5000)
-    days: dict = {}
-    for d in docs:
-        day = days.setdefault(d["date"], {"date": d["date"], "items": [], "kcal": 0, "protein": 0, "carbs": 0, "fat": 0})
-        day["items"].append(strip_meal(d, hide))
-        for k in ("kcal", "protein", "carbs", "fat"):
-            day[k] = round(day[k] + (d.get(k) or 0), 1)
-    out = list(days.values())
-    if hide:
-        for day in out:
-            for k in ("kcal", "protein", "carbs", "fat"):
-                day.pop(k)
-    return out
-
-class MealUpdateIn(BaseModel):
-    name: Optional[str] = None
-    grams: Optional[float] = None
-    kcal: Optional[float] = None
-    protein: Optional[float] = None
-    carbs: Optional[float] = None
-    fat: Optional[float] = None
-
-@api.put("/meals/{meal_id}")
-async def update_meal(meal_id: str, body: MealUpdateIn, user=Depends(require_staff)):
-    """Staff completes/corrects a logged food (e.g. name-only entries of DCA clients)."""
-    m = await db.meals.find_one({"_id": oid(meal_id)})
-    if not m:
-        raise HTTPException(404, "Pasto non trovato")
-    await assert_access(user, m["client_id"], allow_nutri=True)
-    upd = {k: v for k, v in body.model_dump().items() if v is not None}
-    upd["edited_by"] = user["name"]
-    await db.meals.update_one({"_id": oid(meal_id)}, {"$set": upd})
-    return ser(await db.meals.find_one({"_id": oid(meal_id)}))
-
-@api.delete("/meals/{meal_id}")
-async def delete_meal(meal_id: str, user=Depends(current_user)):
-    m = await db.meals.find_one({"_id": oid(meal_id)})
-    if not m:
-        raise HTTPException(404, "Pasto non trovato")
-    await assert_access(user, m["client_id"])
-    await db.meals.delete_one({"_id": oid(meal_id)})
-    return {"ok": True}
-
-# ---------- nutrition plan / targets / diary comments / team notes ----------
-class NutritionPlanIn(BaseModel):
-    targets: dict = {}  # kcal, protein, carbs, fat
-    meal_plan: List[dict] = []  # [{meal, items}]
-    notes: Optional[str] = ""
-
-@api.get("/clients/{client_id}/nutrition")
-async def get_nutrition_plan(client_id: str, user=Depends(current_user)):
-    c = await assert_access(user, client_id, allow_nutri=True)
-    doc = await db.nutrition_plans.find_one({"client_id": client_id}) or {}
-    out = {"targets": doc.get("targets") or {}, "meal_plan": doc.get("meal_plan") or [], "notes": doc.get("notes", ""),
-           "updated_by": doc.get("updated_by"), "updated_at": doc.get("updated_at")}
-    if user["role"] == "client" and not visible(c, "nutrition"):
-        out["targets"] = {}
-        out["meal_plan"] = []
-        out["notes"] = ""
-        out["hidden"] = True
-    return out
-
-@api.put("/clients/{client_id}/nutrition")
-async def set_nutrition_plan(client_id: str, body: NutritionPlanIn, user=Depends(require_staff)):
-    await assert_access(user, client_id, allow_nutri=True)
-    targets = {k: num(body.targets.get(k)) for k in ("kcal", "protein", "carbs", "fat") if num(body.targets.get(k))}
-    await db.nutrition_plans.update_one({"client_id": client_id}, {"$set": {
-        "client_id": client_id, "targets": targets, "meal_plan": body.meal_plan, "notes": body.notes,
-        "updated_by": user["name"], "updated_at": now_iso()}}, upsert=True)
-    return await get_nutrition_plan(client_id, user)
-
-@api.get("/diary/{client_id}/{date}/comments")
-async def diary_comments(client_id: str, date: str, user=Depends(current_user)):
-    await assert_access(user, client_id, allow_nutri=True)
-    return await get_comments("diary", f"{client_id}:{date}")
-
-@api.post("/diary/{client_id}/{date}/comments")
-async def diary_comment(client_id: str, date: str, body: CommentIn, user=Depends(current_user)):
-    await assert_access(user, client_id, allow_nutri=True)
-    return await add_comment("diary", f"{client_id}:{date}", user, body.text)
-
-@api.get("/clients/{client_id}/team-notes")
-async def team_notes(client_id: str, user=Depends(require_staff)):
-    await assert_access(user, client_id, allow_nutri=True)
-    return await get_comments("team", client_id)
-
-@api.post("/clients/{client_id}/team-notes")
-async def team_note(client_id: str, body: CommentIn, user=Depends(require_staff)):
-    await assert_access(user, client_id, allow_nutri=True)
-    return await add_comment("team", client_id, user, body.text)
-
-# ---------- subscription packages ----------
-DEFAULT_PACKAGES = [
-    ("Aiuto esecuzione online", "Solo correzione tecnica, senza scheda.", 25, "mensile", 8, 0, ["8 video check al mese"]),
-    ("Aiuto esecuzione online", "Solo correzione tecnica, senza scheda.", 255, "annuale", 100, 0, ["100 video check all'anno", "Risparmi il 15%"]),
-    ("Esecuzione di persona · 1 lezione", "Prima lezione 20€, poi 1 lezione al mese.", 40, "mensile", 0, 3, ["1 lezione al mese", "Prima lezione 20€", "Percorso minimo 3 mesi"]),
-    ("Esecuzione di persona · 1 lezione", "1 lezione al mese.", 408, "annuale", 0, 0, ["12 lezioni all'anno", "Prima lezione 20€", "Risparmi il 15%"]),
-    ("Esecuzione di persona · 2 lezioni", "Prima lezione 20€, poi 2 lezioni al mese.", 70, "mensile", 0, 3, ["2 lezioni al mese", "Prima lezione 20€", "Percorso minimo 3 mesi"]),
-    ("Esecuzione di persona · 2 lezioni", "2 lezioni al mese.", 714, "annuale", 0, 0, ["24 lezioni all'anno", "Prima lezione 20€", "Risparmi il 15%"]),
-    ("Coaching completo · 1 lezione", "Scheda, monitoraggio, misure e 1 lezione al mese.", 70, "mensile", 0, 3, ["Schede personalizzate", "1 lezione al mese", "Percorso minimo 3 mesi"]),
-    ("Coaching completo · 1 lezione", "Scheda, monitoraggio, misure e 1 lezione al mese.", 714, "annuale", 0, 0, ["Schede personalizzate", "12 lezioni all'anno", "Supporto via chat", "Risparmi il 15%"]),
-    ("Coaching completo · 2 lezioni", "Scheda, monitoraggio, misure e 2 lezioni al mese.", 120, "mensile", 0, 3, ["Schede personalizzate", "2 lezioni al mese", "Percorso minimo 3 mesi"]),
-    ("Coaching completo · 2 lezioni", "Scheda, monitoraggio, misure e 2 lezioni al mese.", 1224, "annuale", 0, 0, ["Schede personalizzate", "24 lezioni all'anno", "Supporto via chat", "Risparmi il 15%"]),
-]
-
-class PackageIn(BaseModel):
-    name: str = Field(min_length=1)
-    description: Optional[str] = ""
-    price: float
-    billing: str = "mensile"  # mensile | annuale
-    video_limit: int = 0
-    min_months: int = 0
-    features: List[str] = []
-
-PKG_LOCK = asyncio.Lock()
-
-@api.get("/packages")
-async def list_packages(user=Depends(current_user)):
-    tid = team_id(user)
-    async with PKG_LOCK:
-        if not await db.packages.find_one({"owner_id": tid}):
-            trainer = await db.users.find_one({"_id": oid(tid)})
-            if trainer:
-                await db.packages.insert_many([{"owner_id": tid, "owner_role": "trainer", "team_id": tid, "name": n, "description": d,
-                                                "price": p, "billing": b, "video_limit": v, "min_months": m, "features": f,
-                                                "order": i, "created_at": now_iso()} for i, (n, d, p, b, v, m, f) in enumerate(DEFAULT_PACKAGES)])
-    docs = await db.packages.find({"team_id": tid}).sort([("owner_role", -1), ("order", 1), ("created_at", 1)]).to_list(500)
-    staff = {s["id"]: s for s in await team(user)}
-    out = []
-    for d in docs:
-        x = ser(d)
-        st = staff.get(d["owner_id"], {})
-        x["owner_name"] = st.get("name", "")
-        x["whatsapp"] = (st.get("staff") or {}).get("whatsapp", "")
-        out.append(x)
-    return out
-
-@api.post("/packages")
-async def create_package(body: PackageIn, user=Depends(require_staff)):
-    doc = body.model_dump()
-    doc.update({"owner_id": str(user["_id"]), "owner_role": user["role"], "team_id": team_id(user), "order": 100, "created_at": now_iso()})
-    await db.packages.insert_one(doc)
-    return ser(doc)
-
-async def own_package(pid: str, user: dict):
-    p = await db.packages.find_one({"_id": oid(pid)})
-    if not p or p["owner_id"] != str(user["_id"]):
-        raise HTTPException(404, "Pacchetto non trovato")
-    return p
-
-@api.put("/packages/{pid}")
-async def update_package(pid: str, body: PackageIn, user=Depends(require_staff)):
-    await own_package(pid, user)
-    await db.packages.update_one({"_id": oid(pid)}, {"$set": body.model_dump()})
-    return ser(await db.packages.find_one({"_id": oid(pid)}))
-
-@api.delete("/packages/{pid}")
-async def delete_package(pid: str, user=Depends(require_staff)):
-    await own_package(pid, user)
-    await db.packages.delete_one({"_id": oid(pid)})
-    return {"ok": True}
-
-# ---------- coach chat ----------
-async def chat_access(user: dict, client_id: str) -> dict:
-    c = await assert_access(user, client_id)
-    if not (c.get("subscription") or {}).get("chat"):
-        raise HTTPException(403, "La chat è inclusa nel Coaching completo annuale")
-    return c
-
-@api.get("/chat/{client_id}")
-async def chat_messages(client_id: str, after: Optional[str] = None, user=Depends(current_user)):
-    await chat_access(user, client_id)
-    f = {"client_id": client_id}
-    if after:
-        f["created_at"] = {"$gt": after}
-    docs = await db.chat.find(f).sort("created_at", 1).to_list(1000)
-    other = "client" if user["role"] == "trainer" else "trainer"
-    await db.chat.update_many({"client_id": client_id, "author_role": other, "read": False}, {"$set": {"read": True}})
-    return [ser(d) for d in docs]
-
-@api.post("/chat/{client_id}")
-async def chat_send(client_id: str, body: CommentIn, user=Depends(current_user)):
-    await chat_access(user, client_id)
-    if not body.text.strip():
-        raise HTTPException(400, "Messaggio vuoto")
-    doc = {"client_id": client_id, "author_id": str(user["_id"]), "author_name": user["name"], "author_role": user["role"],
-           "text": body.text.strip()[:4000], "read": False, "created_at": now_iso()}
-    await db.chat.insert_one(doc)
-    return ser(doc)
-
-@api.get("/chat-unread")
-async def chat_unread(user=Depends(current_user)):
-    """Unread counts per client for the trainer, or for the client itself."""
-    if user["role"] == "trainer":
-        ids = [str(u["_id"]) for u in await db.users.find({"trainer_id": str(user["_id"]), "role": "client"}, {"_id": 1}).to_list(1000)]
-        f = {"client_id": {"$in": ids}, "author_role": "client", "read": False}
-    else:
-        f = {"client_id": str(user["_id"]), "author_role": "trainer", "read": False}
-    out: dict = {}
-    async for d in db.chat.find(f, {"client_id": 1}):
-        out[d["client_id"]] = out.get(d["client_id"], 0) + 1
-    return out
-
-# ---------- payments ----------
-class PaymentIn(BaseModel):
-    client_id: str
-    amount: float = Field(gt=0)
-    period: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")  # cycle start date the payment covers
-    note: Optional[str] = ""
-
-@api.post("/payments")
-async def create_payment(body: PaymentIn, user=Depends(require_trainer)):
-    c = await assert_access(user, body.client_id)
-    if await db.payments.find_one({"client_id": body.client_id, "period": body.period}):
-        raise HTTPException(409, "Rinnovo già segnato come pagato")
-    doc = body.model_dump()
-    doc.update({"trainer_id": str(user["_id"]), "client_name": c["name"], "package": (c.get("subscription") or {}).get("name", ""),
-                "paid_at": now_iso()})
-    try:
-        await db.payments.insert_one(doc)
-    except DuplicateKeyError:
-        raise HTTPException(409, "Rinnovo già segnato come pagato")
-    return ser(doc)
-
-@api.delete("/payments/{pid}")
-async def delete_payment(pid: str, user=Depends(require_trainer)):
-    res = await db.payments.delete_one({"_id": oid(pid), "trainer_id": str(user["_id"])})
-    if not res.deleted_count:
-        raise HTTPException(404, "Pagamento non trovato")
-    return {"ok": True}
-
-@api.get("/payments")
-async def list_payments(user=Depends(require_trainer)):
-    docs = await db.payments.find({"trainer_id": str(user["_id"])}).sort("paid_at", -1).to_list(5000)
-    return [ser(d) for d in docs]
-
-@api.get("/payments/summary")
-async def payments_summary(user=Depends(require_trainer)):
-    """Income per month (by payment date) for the last 6 months."""
-    now = datetime.now(timezone.utc)
-    months = []
-    y, m = now.year, now.month
-    for _ in range(6):
-        months.append(f"{y}-{m:02d}")
-        m -= 1
-        if m == 0:
-            y, m = y - 1, 12
-    totals = {k: {"month": k, "total": 0.0, "count": 0} for k in months}
-    async for p in db.payments.find({"trainer_id": str(user["_id"]), "paid_at": {"$gte": months[-1]}}):
-        k = p["paid_at"][:7]
-        if k in totals:
-            totals[k]["total"] = round(totals[k]["total"] + p["amount"], 2)
-            totals[k]["count"] += 1
-    return list(reversed([totals[k] for k in months]))
-
-# ---------- questions (client -> coach) ----------
-class QuestionIn(BaseModel):
-    subject: str = Field(min_length=1)
-    text: str = Field(min_length=1)
-
-@api.post("/questions")
-async def create_question(body: QuestionIn, user=Depends(current_user)):
-    if user["role"] != "client":
-        raise HTTPException(403, "Solo i clienti possono inviare domande")
-    doc = {"client_id": str(user["_id"]), "client_name": user["name"], "trainer_id": user["trainer_id"], "subject": body.subject,
-           "text": body.text, "status": "open", "created_at": now_iso(), "updated_at": now_iso()}
-    await db.questions.insert_one(doc)
-    return ser(doc)
-
-@api.get("/questions")
-async def list_questions(user=Depends(current_user)):
-    if user["role"] == "client":
-        f = {"client_id": str(user["_id"])}
-    elif user["role"] == "trainer":
-        f = {"trainer_id": str(user["_id"])}
-    else:
-        raise HTTPException(403, "Accesso negato")
-    docs = await db.questions.find(f).sort("updated_at", -1).to_list(500)
-    return [ser(d) for d in docs]
-
-async def get_question(qid: str, user: dict):
-    q = await db.questions.find_one({"_id": oid(qid)})
-    if not q:
-        raise HTTPException(404, "Domanda non trovata")
-    await assert_access(user, q["client_id"])
-    return q
-
-@api.get("/questions/{qid}")
-async def question_detail(qid: str, user=Depends(current_user)):
-    q = ser(await get_question(qid, user))
-    q["comments"] = await get_comments("question", qid)
-    return q
-
-@api.post("/questions/{qid}/comments")
-async def question_comment(qid: str, body: CommentIn, user=Depends(current_user)):
-    await get_question(qid, user)
-    status = "answered" if user["role"] == "trainer" else "open"
-    await db.questions.update_one({"_id": oid(qid)}, {"$set": {"status": status, "updated_at": now_iso()}})
-    return await add_comment("question", qid, user, body.text)
-
-@api.put("/questions/{qid}/status")
-async def question_status(qid: str, body: StatusIn, user=Depends(current_user)):
-    await get_question(qid, user)
-    if body.status not in ("open", "answered", "closed"):
-        raise HTTPException(400, "Stato non valido")
-    await db.questions.update_one({"_id": oid(qid)}, {"$set": {"status": body.status}})
-    return {"ok": True}
-
 app.include_router(api)
-app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
-@app.on_event("startup")
-async def create_indexes():
-    await db.users.create_index("email", unique=True)
-    await db.payments.create_index([("client_id", 1), ("period", 1)], unique=True)
