@@ -10,6 +10,7 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import { makeStyles, useTheme } from "@/src/theme";
 import { usesNativeTabs } from "@/src/navigation";
 import { fileUrl, fmtDate } from "@/src/api";
+import { FlipLogo } from "@/src/flip-logo";
 import { Image } from "expo-image";
 
 export function Laser({ style }: { style?: StyleProp<ViewStyle> }) {
@@ -42,6 +43,7 @@ export function Header({ title, back, right }: { title: string; back?: boolean; 
         ) : null}
         <Text style={s.headerTitle} numberOfLines={1}>{title}</Text>
         {right}
+        <FlipLogo />
       </View>
       <Laser />
     </View>

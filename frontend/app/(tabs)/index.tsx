@@ -42,6 +42,7 @@ function TrainerHome() {
           <Btn testID="packages-button" small variant="dark" icon="pricetags" title="Listino" style={{ flex: 1 }} onPress={() => router.push("/packages")} />
         </View>
       ) : null}
+      {user?.role === "trainer" ? <Btn testID="copilot-button" variant="ghost" icon="sparkles" title="Copilot AI" onPress={() => router.push("/copilot")} /> : null}
       {user?.role === "trainer" && data ? <Renewals clients={data} /> : null}
       <H>{`Clienti (${data?.length ?? 0})`}</H>
       {loading && !data ? <Loading /> : null}

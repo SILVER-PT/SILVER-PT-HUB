@@ -5,8 +5,9 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import { api } from "@/src/api";
 import { Btn, Card, Chip, ChipRow, ErrorText, Field, Loading, Screen, T, Toggle } from "@/src/ui";
 import { useTheme } from "@/src/theme";
+import { AiPlanSheet, PROTOCOLS, TECHNIQUES, applyProtocol, findMax } from "@/src/plan-tools";
 
-const newEx = () => ({ name: "", sets: "3", reps: "10", load: "", rir: "2", rest: "90s", notes: "" });
+const newEx = () => ({ name: "", sets: "3", reps: "10", load: "", rir: "2", rest: "90s", notes: "", type: "reps", technique: "" });
 const APPROACHES = ["Ipertrofia", "Forza", "Ricomposizione", "Dimagrimento", "Powerbuilding", "Contest prep", "Ricondizionamento"];
 
 export default function PlanEdit() {
@@ -16,6 +17,12 @@ export default function PlanEdit() {
   const [plan, setPlan] = useState<any>(planId ? null : { name: "", notes: "", days: [{ name: "Giorno A", exercises: [newEx()] }] });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [maxes, setMaxes] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    api(`/clients/${clientId}/maxes`).then(setMaxes).catch(() => {});
+  }, [clientId]);
 
   useEffect(() => {
     if (planId) api(`/plans/${planId}`).then(setPlan).catch((e) => setErr(e.message));
@@ -42,6 +49,8 @@ export default function PlanEdit() {
 
   return (
     <Screen title={planId ? "Modifica scheda" : "Nuova scheda"} back>
+      <Btn testID="ai-plan-open-button" icon="sparkles" variant="ghost" title="Genera con AI / Guidata ISSA" onPress={() => setAiOpen(true)} />
+      <AiPlanSheet visible={aiOpen} onClose={() => setAiOpen(false)} clientId={clientId} onPlan={(g) => setPlan((p: any) => ({ ...p, name: p.name || g.name || "", approach: g.approach || p.approach, notes: g.notes || p.notes, days: g.days?.length ? g.days : p.days }))} />
       <Field testID="plan-name-input" label="Nome scheda" placeholder="es. Ipertrofia - Blocco 1" value={plan.name} onChangeText={(v) => upd((p) => { p.name = v; })} />
       <Field testID="plan-notes-input" label="Note" multiline value={plan.notes} onChangeText={(v) => upd((p) => { p.notes = v; })} />
       <T muted>Approccio</T>
@@ -68,16 +77,45 @@ export default function PlanEdit() {
                     <Ionicons name="close-circle-outline" size={22} color={colors.muted} />
                   </Pressable>
                 </View>
-                <View style={{ flexDirection: "row", gap: 6 }}>
-                  <Field testID={`ex-sets-${di}-${ei}`} label="Serie" keyboardType="number-pad" value={String(e.sets)} onChangeText={f("sets")} style={{ flex: 1 }} />
-                  <Field testID={`ex-reps-${di}-${ei}`} label="Rip" value={String(e.reps)} onChangeText={f("reps")} style={{ flex: 1 }} />
-                  <Field testID={`ex-load-${di}-${ei}`} label="Kg" keyboardType="decimal-pad" value={String(e.load)} onChangeText={f("load")} style={{ flex: 1 }} />
-                  <Field testID={`ex-rir-${di}-${ei}`} label="RIR" keyboardType="number-pad" value={String(e.rir)} onChangeText={f("rir")} style={{ flex: 1 }} />
-                </View>
+                <ChipRow>
+                  <Chip testID={`ex-type-reps-${di}-${ei}`} label="Ripetizioni" active={e.type !== "time"} onPress={() => f("type")("reps")} />
+                  <Chip testID={`ex-type-time-${di}-${ei}`} label="A tempo (sec)" active={e.type === "time"} onPress={() => f("type")("time")} />
+                </ChipRow>
+                {e.scheme?.length ? (
+                  <View style={{ gap: 4 }} testID={`ex-scheme-${di}-${ei}`}>
+                    <T style={{ fontWeight: "800", fontSize: 13, color: colors.brandPrimary }}>{e.protocol}</T>
+                    <T muted style={{ fontSize: 12 }}>{e.scheme.map((x: any, i: number) => `${i + 1}) ${x.reps}×${x.load}`).join("  ")}</T>
+                    <Pressable testID={`ex-scheme-remove-${di}-${ei}`} style={{ minHeight: 44, justifyContent: "center" }} onPress={() => upd((p) => { const x = p.days[di].exercises[ei]; delete x.scheme; x.protocol = ""; })}>
+                      <T style={{ color: colors.muted, fontSize: 12, textDecorationLine: "underline" }}>Rimuovi protocollo</T>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: "row", gap: 6 }}>
+                    <Field testID={`ex-sets-${di}-${ei}`} label="Serie" keyboardType="number-pad" value={String(e.sets)} onChangeText={f("sets")} style={{ flex: 1 }} />
+                    <Field testID={`ex-reps-${di}-${ei}`} label={e.type === "time" ? "Sec" : "Rip"} value={String(e.reps)} onChangeText={f("reps")} style={{ flex: 1 }} />
+                    <Field testID={`ex-load-${di}-${ei}`} label="Kg" keyboardType="decimal-pad" value={String(e.load)} onChangeText={f("load")} style={{ flex: 1 }} />
+                    <Field testID={`ex-rir-${di}-${ei}`} label="RIR" keyboardType="number-pad" value={String(e.rir)} onChangeText={f("rir")} style={{ flex: 1 }} />
+                  </View>
+                )}
                 <View style={{ flexDirection: "row", gap: 6 }}>
                   <Field testID={`ex-rest-${di}-${ei}`} label="Recupero" value={e.rest} onChangeText={f("rest")} style={{ width: 100 }} />
                   <Field testID={`ex-notes-${di}-${ei}`} label="Note tecniche" value={e.notes} onChangeText={f("notes")} style={{ flex: 1 }} />
                 </View>
+                <T muted style={{ fontSize: 11, fontWeight: "700" }}>TECNICA DI INTENSITÀ</T>
+                <ChipRow>
+                  {TECHNIQUES.map((t) => <Chip key={t} testID={`ex-tech-${di}-${ei}-${t}`} label={t} active={e.technique === t} onPress={() => f("technique")(e.technique === t ? "" : t)} />)}
+                </ChipRow>
+                {e.type !== "time" ? (
+                  <>
+                    <T muted style={{ fontSize: 11, fontWeight: "700" }}>PROTOCOLLO ISSA{findMax(maxes, e.name) ? ` · 1RM stimato ${findMax(maxes, e.name)} kg` : " · carichi in %1RM"}</T>
+                    <ChipRow>
+                      {PROTOCOLS.map((pr) => (
+                        <Chip key={pr.name} testID={`ex-proto-${di}-${ei}-${pr.name}`} label={pr.name} active={e.protocol === pr.name}
+                          onPress={() => upd((p) => { p.days[di].exercises[ei] = applyProtocol(p.days[di].exercises[ei], pr.name, findMax(maxes, e.name)); })} />
+                      ))}
+                    </ChipRow>
+                  </>
+                ) : null}
               </View>
             );
           })}

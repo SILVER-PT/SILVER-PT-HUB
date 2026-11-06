@@ -71,8 +71,10 @@ export default function Profile() {
   const { colors } = useTheme();
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const [staff, setStaff] = useState({ whatsapp: user?.staff?.whatsapp || "", bio: user?.staff?.bio || "" });
-  const [saved, setSaved] = useState("");
+  const [staff, setStaff] = useState({ whatsapp: user?.staff?.whatsapp || "", bio: user?.staff?.bio || "", title: user?.staff?.title || "" });
+  const [banner, setBanner] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pw, setPw] = useState({ current: "", next: "", repeat: "" });
+  const [pwBusy, setPwBusy] = useState(false);
   const picker = useMediaPicker();
   const isStaff = user?.role !== "client";
   const out = async () => {
@@ -95,12 +97,28 @@ export default function Profile() {
     }
   };
   const saveStaff = async () => {
+    setBanner(null);
     try {
-      await api("/me", { method: "PUT", body: { staff } });
+      await api("/auth/me", { method: "PUT", body: { staff } });
       await refresh();
-      setSaved("Salvato");
+      setBanner({ ok: true, text: "Dati professionali salvati" });
     } catch (e: any) {
-      setErr(e.message);
+      setBanner({ ok: false, text: e.message });
+    }
+  };
+  const changePassword = async () => {
+    setBanner(null);
+    if (pw.next.length < 6) return setBanner({ ok: false, text: "La nuova password deve avere almeno 6 caratteri" });
+    if (pw.next !== pw.repeat) return setBanner({ ok: false, text: "Le due password non coincidono" });
+    setPwBusy(true);
+    try {
+      await api("/auth/me", { method: "PUT", body: { current_password: pw.current, new_password: pw.next } });
+      setPw({ current: "", next: "", repeat: "" });
+      setBanner({ ok: true, text: "Password aggiornata" });
+    } catch (e: any) {
+      setBanner({ ok: false, text: e.message });
+    } finally {
+      setPwBusy(false);
     }
   };
   const roleLabel = user?.role === "trainer" ? "COACH · PFT ISSA EUROPE" : user?.role === "nutritionist" ? "NUTRIZIONISTA / DIETISTA" : "CLIENTE";
@@ -126,9 +144,10 @@ export default function Profile() {
       {isStaff ? (
         <>
           <H>Contatti per i clienti</H>
+          <Field testID="staff-title-input" label="Titolo professionale" placeholder="es. Personal Trainer ISSA, Dietista" value={staff.title} onChangeText={(v) => setStaff({ ...staff, title: v })} />
           <Field testID="staff-whatsapp-input" label="Numero WhatsApp (con prefisso, es. 393331234567)" keyboardType="phone-pad" value={staff.whatsapp} onChangeText={(v) => setStaff({ ...staff, whatsapp: v })} />
           <Field testID="staff-bio-input" label="Presentazione" multiline value={staff.bio} onChangeText={(v) => setStaff({ ...staff, bio: v })} />
-          {saved ? <T style={{ color: colors.success }}>{saved}</T> : null}
+          
           <Btn testID="staff-save-button" title="Salva contatti" onPress={saveStaff} />
           <Btn testID="profile-packages-button" variant="dark" icon="pricetags" title={user?.role === "trainer" ? "Gestisci abbonamenti" : "Il mio tariffario"} onPress={() => router.push("/packages")} />
         </>
@@ -140,6 +159,19 @@ export default function Profile() {
           <H>Dati personali</H>
           <ProfileForm clientId={user.id} initial={user.profile} name={user.name} onSaved={refresh} />
         </>
+      ) : null}
+      <H>Cambia password</H>
+      <Field testID="pw-current-input" label="Password attuale" secureTextEntry value={pw.current} onChangeText={(v) => setPw({ ...pw, current: v })} />
+      <Field testID="pw-new-input" label="Nuova password" secureTextEntry value={pw.next} onChangeText={(v) => setPw({ ...pw, next: v })} />
+      <Field testID="pw-repeat-input" label="Ripeti nuova password" secureTextEntry value={pw.repeat} onChangeText={(v) => setPw({ ...pw, repeat: v })} />
+      {pw.repeat && pw.next !== pw.repeat ? <T testID="pw-mismatch-text" style={{ color: colors.error, fontSize: 13 }}>Le password non coincidono</T> : null}
+      <Btn testID="pw-save-button" variant="dark" icon="key" title="Aggiorna password" loading={pwBusy} disabled={!pw.current || !pw.next} onPress={changePassword} />
+      {banner ? (
+        <View testID="profile-banner" style={{ flexDirection: "row", gap: 8, alignItems: "center", padding: 12, borderRadius: 12, borderWidth: 1, borderColor: banner.ok ? colors.success : colors.error, backgroundColor: colors.surfaceSecondary }}>
+          <Ionicons name={banner.ok ? "checkmark-circle" : "alert-circle"} size={20} color={banner.ok ? colors.success : colors.error} />
+          <T testID="profile-banner-text" style={{ flex: 1, color: banner.ok ? colors.success : colors.error }}>{banner.text}</T>
+          <Pressable testID="profile-banner-close" onPress={() => setBanner(null)} hitSlop={8}><Ionicons name="close" size={18} color={colors.muted} /></Pressable>
+        </View>
       ) : null}
       <ErrorText text={err} />
       <Btn testID="logout-button" variant="ghost" icon="log-out-outline" title="Esci" onPress={out} />

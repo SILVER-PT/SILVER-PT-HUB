@@ -3,9 +3,25 @@ import { Pressable, Text, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import * as Haptics from "expo-haptics";
+import { setAudioModeAsync, useAudioPlayer } from "expo-audio";
 import { api, fmtDate } from "@/src/api";
 import { Btn, Card, Comments, ErrorText, Field, Loading, Screen, T } from "@/src/ui";
 import { makeStyles, useTheme } from "@/src/theme";
+
+// "90s", "2'", "2m", "1:30", "120" -> seconds
+export function parseRest(r?: string) {
+  const v = String(r || "").trim().toLowerCase().replace(",", ".");
+  if (!v) return 0;
+  const mmss = v.match(/^(\d+):(\d{1,2})$/);
+  if (mmss) return Number(mmss[1]) * 60 + Number(mmss[2]);
+  const ms = v.match(/^(\d+)\s*['m]\s*(\d+)/);
+  if (ms) return Number(ms[1]) * 60 + Number(ms[2]);
+  const n = parseFloat(v);
+  if (isNaN(n)) return 0;
+  return /'|m/.test(v) ? Math.round(n * 60) : Math.round(n);
+}
+
+const fmtSec = (t: number) => `${Math.floor(t / 60)}`.padStart(2, "0") + ":" + `${t % 60}`.padStart(2, "0");
 
 export default function Session() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -16,6 +32,26 @@ export default function Session() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [rest, setRest] = useState<{ end: number; total: number; name: string } | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const beep = useAudioPlayer(require("../../assets/sounds/beep.wav"));
+
+  useEffect(() => { setAudioModeAsync({ playsInSilentMode: true }).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!rest) return;
+    const t = setInterval(() => {
+      const n = Date.now();
+      setNow(n);
+      if (n >= rest.end) {
+        clearInterval(t);
+        setRest(null);
+        try { beep.seekTo(0); beep.play(); } catch {}
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      }
+    }, 250);
+    return () => clearInterval(t);
+  }, [rest, beep]);
+  const restLeft = rest ? Math.max(0, Math.ceil((rest.end - now) / 1000)) : 0;
 
   const load = () => api(`/sessions/${id}`).then(setSess).catch((e) => setErr(e.message));
   useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -46,6 +82,8 @@ export default function Session() {
       st.done_load = st.done_load ?? st.planned_load;
       st.done_rir = st.done_rir ?? st.planned_rir;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      const secs = parseRest(c.exercises[ei].rest);
+      if (secs > 0) { setNow(Date.now()); setRest({ end: Date.now() + secs * 1000, total: secs, name: c.exercises[ei].name }); }
     }
     setSess(c);
     persist(c).catch((e) => setErr(e.message));
@@ -65,7 +103,8 @@ export default function Session() {
 
   const doneSets = sess.exercises.reduce((a: number, e: any) => a + e.sets.filter((x: any) => x.completed).length, 0);
   const totSets = sess.exercises.reduce((a: number, e: any) => a + e.sets.length, 0);
-  const mm = `${Math.floor(elapsed / 60)}`.padStart(2, "0") + ":" + `${elapsed % 60}`.padStart(2, "0");
+  const mm = fmtSec(elapsed);
+  const dur = sess.finished_at ? Math.round((new Date(sess.finished_at).getTime() - new Date(sess.started_at).getTime()) / 60000) : 0;
 
   const cell = (ei: number, si: number, k: string, st: any, w = 54) => (
     <TextInput
@@ -86,19 +125,33 @@ export default function Session() {
         <View style={{ flex: 1 }}>
           <T muted style={{ fontSize: 12, fontWeight: "700" }}>{sess.plan_name.toUpperCase()}</T>
           <T style={{ fontWeight: "900", fontSize: 18 }}>{live ? "Sessione in corso" : `Completata · ${fmtDate(sess.started_at, true)}`}</T>
-          <T muted testID="session-progress-text">{doneSets}/{totSets} serie</T>
+          <T muted testID="session-progress-text">{doneSets}/{totSets} serie{!live && dur ? ` · durata ${dur} min · ${new Date(sess.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}–${new Date(sess.finished_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}` : ""}</T>
         </View>
         {live ? <Text testID="session-timer" style={s.timer}>{mm}</Text> : <Ionicons name="checkmark-done-circle" size={36} color={colors.success} />}
       </Card>
+      {rest ? (
+        <Card accent testID="rest-timer-card" style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <Ionicons name="timer" size={28} color={colors.brandPrimary} />
+          <View style={{ flex: 1 }}>
+            <T muted style={{ fontSize: 12, fontWeight: "700" }}>RECUPERO · {rest.name.toUpperCase()}</T>
+            <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.surfaceTertiary, marginTop: 6, overflow: "hidden" }}>
+              <View style={{ height: 6, width: `${(restLeft / rest.total) * 100}%`, backgroundColor: colors.brandPrimary }} />
+            </View>
+          </View>
+          <Text testID="rest-timer-text" style={s.timer}>{fmtSec(restLeft)}</Text>
+          <Pressable testID="rest-skip-button" onPress={() => setRest(null)} style={{ padding: 8 }}><Ionicons name="close" size={22} color={colors.muted} /></Pressable>
+        </Card>
+      ) : null}
       {sess.exercises.map((e: any, ei: number) => (
         <Card key={ei} testID={`session-exercise-${ei}`}>
-          <T style={{ fontWeight: "900", fontSize: 17 }}>{e.name}</T>
+          <T style={{ fontWeight: "900", fontSize: 17 }}>{e.name}{e.technique ? <T style={{ color: colors.brandPrimary, fontSize: 13 }}>{`  · ${e.technique}`}</T> : null}</T>
+          {e.protocol ? <T muted style={{ fontSize: 12, fontWeight: "800" }}>{e.protocol.toUpperCase()}</T> : null}
           {e.notes || e.rest ? <T muted style={{ fontSize: 13 }}>{e.rest ? `Recupero ${e.rest}` : ""}{e.notes ? ` · ${e.notes}` : ""}</T> : null}
           <View style={s.headRow}>
             <Text style={[s.th, { width: 28 }]}>#</Text>
             <Text style={[s.th, { flex: 1 }]}>Previsto</Text>
             <Text style={[s.th, { width: 54 }]}>Kg</Text>
-            <Text style={[s.th, { width: 54 }]}>Rip</Text>
+            <Text style={[s.th, { width: 54 }]}>{e.type === "time" ? "Sec" : "Rip"}</Text>
             <Text style={[s.th, { width: 44 }]}>RIR</Text>
             <Text style={[s.th, { width: 44 }]}>Ese</Text>
             <View style={{ width: 36 }} />
@@ -106,7 +159,7 @@ export default function Session() {
           {e.sets.map((st: any, si: number) => (
             <View key={si} style={[s.row, st.completed && s.rowDone]}>
               <Text style={[s.idx, { width: 28 }]}>{si + 1}</Text>
-              <Text style={[s.planned, { flex: 1 }]} numberOfLines={2}>{st.planned_reps}{st.planned_load ? `×${st.planned_load}` : ""}{st.planned_rir !== "" ? ` R${st.planned_rir}` : ""}</Text>
+              <Text style={[s.planned, { flex: 1 }]} numberOfLines={2}>{e.type === "time" ? `${st.planned_reps}s` : st.planned_reps}{st.planned_load ? `×${st.planned_load}` : ""}{st.planned_rir !== "" ? ` R${st.planned_rir}` : ""}</Text>
               {cell(ei, si, "done_load", st)}
               {cell(ei, si, "done_reps", st)}
               {cell(ei, si, "done_rir", st, 44)}

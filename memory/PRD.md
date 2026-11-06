@@ -35,6 +35,13 @@ JWT email/password with roles (client registers with trainer invite code) · Ope
 - Client chat tile red badge with unread coach messages (/api/chat-unread)
 - Test data (TEST_ users/plans) cleaned
 
+## Implemented — batch 5
+- Flip coin logo (header, tap/hover reveals user avatar); PUT /api/auth/me (staff title/bio/WhatsApp + password change with bcrypt check) + profile banners
+- Copilot AI chat for coach (GPT-5.5 via Emergent key, optional client context, soft-clear)
+- Workout builder: AI/guided ISSA generator (/api/ai/plan), per-exercise type reps/time, intensity techniques, ISSA protocols (pyramids, waves, 5x5, GVT, rest-pause, drop set) adapted on estimated 1RM (/api/clients/{id}/maxes, Epley)
+- Session player: time-based exercises, rest timer with audio beep + haptics, duration/time range on completed sessions
+- Deferred: push notifications (needs google-services.json + native build)
+
 ## Backlog
 - P1: native date/time pickers, push reminders for appointments, photo side-by-side comparison
 - P1: meal delete confirmation, trainer macro targets per client

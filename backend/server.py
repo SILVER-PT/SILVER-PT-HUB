@@ -581,11 +581,17 @@ async def start_session(body: SessionStartIn, user=Depends(current_user)):
     day = p["days"][body.day_index]
     exercises = []
     for ex in day.get("exercises", []):
-        n = int(ex.get("sets") or 1)
+        n = int(num(ex.get("sets")) or 1)
+        scheme = ex.get("scheme") or []
+        sets = []
+        for i in range(len(scheme) or n):
+            sc = scheme[i] if i < len(scheme) else {}
+            sets.append({"planned_reps": sc.get("reps", ex.get("reps", "")), "planned_load": sc.get("load", ex.get("load", "")),
+                         "planned_rir": sc.get("rir", ex.get("rir", "")), "done_reps": None, "done_load": None,
+                         "done_rir": None, "execution": None, "completed": False})
         exercises.append({"name": ex.get("name", ""), "notes": ex.get("notes", ""), "rest": ex.get("rest", ""),
-                          "sets": [{"planned_reps": ex.get("reps", ""), "planned_load": ex.get("load", ""),
-                                    "planned_rir": ex.get("rir", ""), "done_reps": None, "done_load": None,
-                                    "done_rir": None, "execution": None, "completed": False} for _ in range(n)]})
+                          "type": ex.get("type", "reps"), "technique": ex.get("technique", ""), "protocol": ex.get("protocol", ""),
+                          "sets": sets})
     doc = {"client_id": p["client_id"], "trainer_id": p["trainer_id"], "plan_id": body.plan_id, "plan_name": p["name"],
            "day_name": day.get("name", f"Giorno {body.day_index + 1}"), "exercises": exercises,
            "status": "in_progress", "started_at": now_iso(), "finished_at": None, "notes": ""}
@@ -1098,6 +1104,157 @@ async def chat_unread(user=Depends(current_user)):
     async for d in db.chat.find(f, {"client_id": 1}):
         out[d["client_id"]] = out.get(d["client_id"], 0) + 1
     return out
+
+
+class AuthMeIn(BaseModel):
+    name: Optional[str] = None
+    avatar: Optional[str] = None
+    staff: Optional[dict] = None
+    current_password: Optional[str] = None
+    new_password: Optional[str] = None
+
+
+@api.put("/auth/me")
+async def update_auth_me(body: AuthMeIn, user=Depends(current_user)):
+    """Update personal/staff data and optionally change password (requires current password)."""
+    if body.name is not None and not body.name.strip():
+        raise HTTPException(400, "Il nome non può essere vuoto")
+    if body.new_password is not None:
+        if len(body.new_password) < 6:
+            raise HTTPException(400, "La nuova password deve avere almeno 6 caratteri")
+        if not body.current_password or not bcrypt.checkpw(body.current_password.encode(), user["password_hash"].encode()):
+            raise HTTPException(400, "Password attuale errata")
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"password_hash": bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()}})
+    staff = {**(user.get("staff") or {}), **body.staff} if body.staff is not None else None
+    return await update_me(MeIn(name=body.name.strip() if body.name else None, avatar=body.avatar, staff=staff), user)
+
+
+# ---------- AI (coach copilot, plan generator) ----------
+async def llm(system: str, prompt: str, session: str) -> str:
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
+    chat = LlmChat(api_key=EMERGENT_KEY, session_id=session, system_message=system).with_model("openai", "gpt-5.5")
+    text = ""
+    async for ev in chat.stream_message(UserMessage(text=prompt)):
+        if isinstance(ev, TextDelta):
+            text += ev.content
+        elif isinstance(ev, StreamDone):
+            break
+    return text
+
+
+async def client_context(cid: str) -> str:
+    c = await db.users.find_one({"_id": oid(cid)})
+    if not c:
+        return ""
+    ms = await db.measurements.find({"client_id": cid}).sort("date", -1).to_list(3)
+    plans = await db.plans.find({"client_id": cid}).sort("created_at", -1).to_list(3)
+    maxes = await compute_maxes(cid)
+    return json.dumps({"nome": c["name"], "profilo": c.get("profile", {}), "abbonamento": (c.get("subscription") or {}).get("name"),
+                       "misure_recenti": [{k: m.get(k) for k in ("date", "weight", "body_fat", "lean_mass", "fat_mass", "circumferences")} for m in ms],
+                       "schede_recenti": [{"nome": p["name"], "approccio": p.get("approach")} for p in plans],
+                       "massimali_stimati_kg": maxes}, ensure_ascii=False, default=str)
+
+
+async def compute_maxes(cid: str) -> dict:
+    """Best estimated 1RM (Epley) per exercise from completed sessions."""
+    out: dict = {}
+    async for s in db.sessions.find({"client_id": cid, "status": "completed"}):
+        for ex in s.get("exercises", []):
+            for st in ex.get("sets", []):
+                w, r = num(st.get("done_load")) or 0, num(st.get("done_reps")) or 0
+                if st.get("completed") and w > 0 and 0 < r <= 15:
+                    e1 = round(w * (1 + r / 30), 1)
+                    if e1 > out.get(ex["name"], 0):
+                        out[ex["name"]] = e1
+    return out
+
+
+@api.get("/clients/{client_id}/maxes")
+async def client_maxes(client_id: str, user=Depends(require_trainer)):
+    await assert_access(user, client_id)
+    return await compute_maxes(client_id)
+
+
+class AiChatIn(BaseModel):
+    message: str = Field(min_length=1)
+    client_id: Optional[str] = None
+
+
+COPILOT_SYS = ("Sei il copilot di un personal trainer certificato ISSA Europe. Rispondi in italiano, in modo pratico e conciso. "
+               "Aiuti con idee di programmazione, analisi dei dati dei clienti, risposte rapide ai clienti. Non dai grammature alimentari "
+               "(sono competenza del nutrizionista) e segnali quando serve un medico.")
+
+
+@api.get("/ai/chat")
+async def ai_history(user=Depends(require_trainer)):
+    docs = await db.ai_chats.find({"trainer_id": str(user["_id"]), "archived": {"$ne": True}}).sort("created_at", 1).to_list(200)
+    return [ser(d) for d in docs]
+
+
+@api.delete("/ai/chat")
+async def ai_clear(user=Depends(require_trainer)):
+    await db.ai_chats.update_many({"trainer_id": str(user["_id"])}, {"$set": {"archived": True}})
+    return {"ok": True}
+
+
+@api.post("/ai/chat")
+async def ai_chat(body: AiChatIn, user=Depends(require_trainer)):
+    tid = str(user["_id"])
+    hist = await db.ai_chats.find({"trainer_id": tid, "archived": {"$ne": True}}).sort("created_at", -1).to_list(12)
+    ctx = ""
+    if body.client_id:
+        await assert_access(user, body.client_id)
+        ctx = f"\nDati del cliente selezionato (JSON): {await client_context(body.client_id)}\n"
+    convo = "\n".join(f"{'Coach' if h['role'] == 'user' else 'Copilot'}: {h['text']}" for h in reversed(hist))
+    prompt = f"Conversazione precedente:\n{convo}\n{ctx}\nCoach: {body.message}\nCopilot:"
+    try:
+        reply = (await llm(COPILOT_SYS, prompt, f"copilot-{tid}-{uuid.uuid4()}")).strip()
+    except Exception as e:
+        logger.error(f"AI chat failed: {e}")
+        raise HTTPException(502, "Assistente AI non disponibile, riprova")
+    now = now_iso()
+    await db.ai_chats.insert_many([{"trainer_id": tid, "role": "user", "text": body.message, "client_id": body.client_id, "created_at": now},
+                                   {"trainer_id": tid, "role": "assistant", "text": reply, "created_at": now_iso()}])
+    return {"reply": reply}
+
+
+class AiPlanIn(BaseModel):
+    client_id: str
+    prompt: Optional[str] = ""
+    params: dict = {}
+
+
+PLAN_SYS = ("Sei un preparatore esperto ISSA e bodybuilding avanzato. Crei schede di allenamento in italiano. "
+            "Rispondi SOLO con JSON valido senza testo extra.")
+
+
+@api.post("/ai/plan")
+async def ai_plan(body: AiPlanIn, user=Depends(require_trainer)):
+    await assert_access(user, body.client_id)
+    ctx = await client_context(body.client_id)
+    prompt = (f"Dati cliente: {ctx}\nDirettive del coach: {body.prompt or '-'}\nParametri guidati (metodo ISSA): {json.dumps(body.params, ensure_ascii=False)}\n"
+              "Usa i massimali stimati per proporre i carichi (kg) quando disponibili. Rispetta split, frequenza, distretti, stimolo "
+              "(accorciamento/allungamento), target (forza/ipertrofia/fibre rosse/fibre bianche), categoria esercizi e tecniche di intensità richieste.\n"
+              'Formato: {"name": str, "approach": str, "notes": str, "days": [{"name": str, "exercises": [{"name": str, "sets": "4", '
+              '"reps": "8-10", "load": "kg o vuoto", "rir": "2", "rest": "90s", "type": "reps|time", "technique": "es. Drop set o vuoto", '
+              '"notes": "note tecniche, stimolo e posizione"}]}]}. Per esercizi a tempo (plank, cardio) usa type "time" e reps in secondi es. "60".')
+    try:
+        text = await llm(PLAN_SYS, prompt, f"plan-{uuid.uuid4()}")
+        plan = json.loads(re.search(r"\{.*\}", text, re.S).group(0))
+    except Exception as e:
+        logger.error(f"AI plan failed: {e}")
+        raise HTTPException(502, "Generazione non riuscita, riprova")
+    for d in plan.get("days", []):
+        for ex in d.get("exercises", []):
+            for k in ("sets", "reps", "load", "rir", "rest"):
+                ex[k] = str(ex.get(k, "") or "")
+            ex["type"] = "time" if str(ex.get("type", "")).lower() == "time" else "reps"
+            m = re.search(r"\d+(?:[.,]\d+)?", ex["load"])
+            ex["load"] = m.group(0).replace(",", ".") if m and "%" not in ex["load"] else ("" if not m else ex["load"])
+            r = re.findall(r"\d+", ex["rir"])
+            ex["rir"] = r[0] if r else ""
+            ex["sets"] = (re.findall(r"\d+", ex["sets"]) or ["3"])[0]
+    return plan
 
 
 # ---------- payments (manual, marked by coach) ----------

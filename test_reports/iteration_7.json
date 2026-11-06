@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 7: tested the new batch on backend and frontend. Backend: 13/13 pytest pass after 1 critical fix. They cover PUT /auth/me (staff, blank name, wrong current password, short password, happy path on a TEST_ user, trainer round-trip that was restored), maxes with an exact Epley value of 78.0, scheme sets in sessions, time-type exercises, the real GPT-5.5 AI chat (send, history, clear, auth checks) and AI plan generation (~25s, valid days). Critical bug FIXED: compute_maxes crashed with a TypeError when a completed set had an empty or non-numeric load (bodyweight, plank, '80%'). This made GET /maxes return 500, and also POST /ai/chat with client_id and POST /ai/plan, which use client_context. Frontend (390x844): flip-logo is present in every header and tapping it reveals the back (opacity 0->1->0). Copilot send and receive work, with an optimistic message and client context. All profile banners work: staff saved, mismatch warning plus banner, wrong current password, short password, success with cleared fields. Password restored to Trainer123!. Plan editor protocol uses the 1RM correctly (79.2 -> 52.5/55/60/62.5), falls back to %1RM for unknown exercises, and remove, technique and time-type chips work. The AI guided sheet fills the editor (2 days, 8 exercises). The session shows planned values that vary per set, a Sec column for time exercises, and a rest timer that counts down, can be skipped and auto-ends. A completed session shows its duration and start-end time. No deprecated expo packages found (expo-audio is used).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/clients/{id}/maxes (+ POST /api/ai/chat with client_id, POST /api/ai/plan)", "issue": "FIXED by T1: compute_maxes did `None > 0` when done_load or done_reps was empty or non-numeric (num() returns None), which raised a TypeError and a 500. Any completed plank or bodyweight set, or a '%'-load set, broke maxes and AI for that client. Fix: `num(...) or 0` at server.py compute_maxes.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "PUT /api/auth/me", "issue": "The password is saved BEFORE the name is validated. A request with a valid password change and a blank name changes the password and then returns 400."},
+      {"endpoint": "PUT /api/auth/me /api/me", "issue": "A staff update replaces the whole dict. Sending {staff:{title}} wipes bio and whatsapp to ''. The UI sends the full object so it works there, but this is not a partial update."},
+      {"endpoint": "POST /api/ai/plan", "issue": "There is no validation of the AI output. Loads come back as text (e.g. 'da definire') and RIR as ranges ('1-2'), and `type` is not normalized to reps|time. These strings go into the decimal-pad Kg field and later into session planned_load."},
+      {"endpoint": "DELETE /api/ai/chat", "issue": "Archives the trainer's entire copilot history, and the UI trash button (copilot-clear-button) asks for no confirmation."},
+      {"endpoint": "data", "issue": "Two completed sessions 'TEST_Scheda2' left over from earlier iterations are still in the real client Marco Rossi's data (ids 6ae74651e0d360cb626bb9a8, 6ae746ab22a3607c3852cf38). They produce a fake 1RM 'TEST_Panca: 79.2' in maxes and in the AI context. T1 did not create them and did not delete them."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Session rest timer", "issue": "`now` is stale when rest starts (setNow is only called inside the interval). The first render showed 01:35 for a 90s rest and 00:06 for a 5s rest, and the progress bar width is briefly >100%. Fix: call setNow(Date.now()) together with setRest in toggle(). Ref: app/session/[id].tsx:84", "testID": "rest-timer-text", "priority": "MEDIUM"},
+      {"component": "parseRest", "issue": "1'30\" parses as 60s instead of 90s (parseFloat stops at the apostrophe). Ref: app/session/[id].tsx:12-20", "testID": "rest-timer-card", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Copilot", "issues": ["AI replies show raw markdown (**bold**, '- ' bullets). Render markdown or strip it."]},
+      {"screen": "Profile", "issues": ["The banner for 'Salva contatti' appears below the password section, far from the button, and can be off-screen.", "The password mismatch warning text has no testID."]},
+      {"screen": "Plan editor", "issues": ["The 'Rimuovi protocollo' link (ex-scheme-remove) is 12px text with no padding or hitSlop, so the touch target is well below 44px.", "Once a protocol is applied, the per-set scheme is read-only and the sets/reps/load fields are hidden, so a single set cannot be adjusted.", "Protocols on an exercise without a 1RM give '80%' loads, which then get copied into done_load in the session."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_silverpt_v7_ai_profile_sessions.py", "/app/test_reports/pytest/pytest_v7.xml"],
+  "action_items": [
+    "Rest timer: setNow(Date.now()) when starting the rest, so the first frame shows the correct value (session/[id].tsx:84).",
+    "PUT /auth/me: validate the name before writing the password. Consider merging the staff dict instead of replacing it.",
+    "Sanitize the AI plan output: numeric or empty load, type in {reps,time}, string fields.",
+    "Copilot: render markdown in bubbles. Add a confirmation before clearing the history.",
+    "Profile: show the staff-save banner near the Salva contatti button. Add a testID to the mismatch warning.",
+    "Increase the touch target of ex-scheme-remove (padding/hitSlop).",
+    "Optionally remove the old TEST_Scheda2 sessions from Marco Rossi (ids above) to clean the fake 1RM."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1387 lines; split it into routers (auth, plans/sessions, ai, payments).",
+    "findMax uses fuzzy substring matching ('Panca' matches 'Panca inclinata'), which can apply the wrong 1RM.",
+    "parseRest/protocol loads: string-typed numeric fields are spread across the plan, session and maxes code; centralize parsing."
+  ],
+  "updated_files": ["/app/backend/server.py (compute_maxes None-safe num)", "/app/backend/tests/test_silverpt_v7_ai_profile_sessions.py"],
+  "success_rate": {"backend": "100% (13/13 after fix)", "frontend": "~92% (all flows work; rest timer first-frame glitch)"},
+  "seed_data_creation": "None persistent. Created TEST_ user, plans, sessions and AI chat messages and deleted them by id. The pre-existing copilot history was archived by the DELETE test and then restored. Trainer password and staff were restored and verified.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest with EXPO_PUBLIC_BACKEND_URL exported (pytest.ini uses xdist). The v7 test archives and restores the trainer's AI history and deletes its own docs via pymongo by id. Marco Rossi id 6ae7273ec8f277d3e820ac37. The AI plan takes ~25s and the chat ~5-15s.",
+  "rca_of_issue": "compute_maxes: num() returns None for '', None or '80%'. The condition `w > 0` then raised a TypeError, and every endpoint calling compute_maxes/client_context returned 500 as soon as the client had any completed set without a numeric load. Reproduced it (500), fixed it, and verified 200 plus a regression test."
+}
