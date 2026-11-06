@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { View, TextInput, StyleSheet, ActivityIndicator, Alert, Text, Pressable, Image } from 'react-native';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -25,6 +26,12 @@ export default function LoginScreen() {
 
       const data = await response.json();
       if (response.ok) {
+        // Salva il token e i dati utente in modo persistente sul dispositivo
+        await AsyncStorage.setItem('token', data.access_token);
+        if (data.user) {
+          await AsyncStorage.setItem('user', JSON.stringify(data.user));
+        }
+
         // Reindirizza alla home dopo il login riuscito
         router.replace('/');
       } else {
