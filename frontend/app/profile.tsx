@@ -1,6 +1,6 @@
 // frontend/app/profile.tsx
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -8,6 +8,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
   // Campi del profilo e credenziali
   const [name, setName] = useState('');
@@ -42,7 +43,9 @@ export default function ProfileScreen() {
 
   const handleSaveChanges = async () => {
     setSuccessMessage('');
+    setErrorMessage('');
     setSaving(true);
+
     try {
       const token = await AsyncStorage.getItem('token');
       const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
@@ -59,12 +62,12 @@ export default function ProfileScreen() {
       // Validazione e gestione cambio password
       if (newPassword.trim()) {
         if (!currentPassword.trim()) {
-          Alert.alert('Attenzione', 'Inserisci la password attuale per impostarne una nuova.');
+          setErrorMessage('Inserisci la password attuale per impostarne una nuova.');
           setSaving(false);
           return;
         }
         if (newPassword !== confirmNewPassword) {
-          Alert.alert('Attenzione', 'Le nuove password non coincidono. Verificale.');
+          setErrorMessage('Le nuove password non coincidono. Verificale.');
           setSaving(false);
           return;
         }
@@ -86,28 +89,25 @@ export default function ProfileScreen() {
       if (response.ok) {
         const updatedUser = data.user || data;
         
-        // 1. Aggiorna i dati salvati in locale su AsyncStorage
+        // Aggiorna lo storage e lo stato locale
         await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
-        
-        // 2. Aggiorna immediatamente lo stato locale per riflettere le modifiche a schermo senza refresh
         setName(updatedUser.name || '');
         setEmail(updatedUser.email || '');
         setWhatsapp(updatedUser.staff?.whatsapp || '');
         setTitle(updatedUser.staff?.title || '');
         setBio(updatedUser.staff?.bio || '');
 
-        // 3. Pulisci i campi delle password
+        // Pulisci i campi password
         setCurrentPassword('');
         setNewPassword('');
         setConfirmNewPassword('');
 
-        // 4. Mostra il messaggio visivo di conferma
-        setSuccessMessage('Profilo aggiornato con successo!');
+        setSuccessMessage('Profilo e credenziali aggiornati con successo!');
       } else {
-        Alert.alert('Errore', data.detail || 'Impossibile aggiornare il profilo.');
+        setErrorMessage(data.detail || 'Impossibile aggiornare il profilo.');
       }
     } catch (err) {
-      Alert.alert('Errore di connessione', 'Verifica la connessione al server.');
+      setErrorMessage('Errore di connessione al server.');
     } finally {
       setSaving(false);
     }
@@ -123,10 +123,17 @@ export default function ProfileScreen() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.headerTitle}>GESTIONE PROFILO</Text>
 
-      {/* Messaggio visivo di conferma */}
+      {/* Banner di Successo */}
       {successMessage ? (
         <View style={styles.successBanner}>
-          <Text style={styles.successBannerText}>{successMessage}</Text>
+          <Text style={styles.successText}>{successMessage}</Text>
+        </View>
+      ) : null}
+
+      {/* Banner di Errore */}
+      {errorMessage ? (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorText}>{errorMessage}</Text>
         </View>
       ) : null}
 
@@ -179,7 +186,7 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Modifica Credenziali (Opzionale)</Text>
         
-        <Text style={styles.label}>Password Attuale</Text>
+        <Text style={styles.label}>Password Attuale (Temporanea o Vecchia)</Text>
         <TextInput
           style={styles.input}
           secureTextEntry
@@ -233,7 +240,9 @@ const styles = StyleSheet.create({
   container: { backgroundColor: '#000', padding: 24, gap: 16, paddingBottom: 40 },
   headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff', textAlign: 'center', marginBottom: 10 },
   successBanner: { backgroundColor: '#112818', borderWidth: 1, borderColor: '#2ecc71', padding: 12, borderRadius: 8, alignItems: 'center' },
-  successBannerText: { color: '#2ecc71', fontWeight: 'bold', fontSize: 14 },
+  successText: { color: '#2ecc71', fontWeight: 'bold', fontSize: 14, textAlign: 'center' },
+  errorBanner: { backgroundColor: '#2c1111', borderWidth: 1, borderColor: '#ff4444', padding: 12, borderRadius: 8, alignItems: 'center' },
+  errorText: { color: '#ff4444', fontWeight: 'bold', fontSize: 14, textAlign: 'center' },
   section: { backgroundColor: '#121212', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#222', gap: 10 },
   sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#fff', marginBottom: 4 },
   label: { color: '#aaa', fontSize: 13, fontWeight: '600' },
