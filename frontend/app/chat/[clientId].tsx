@@ -10,9 +10,10 @@ import { Empty, ErrorText, Header, Loading } from "@/src/ui";
 import { makeStyles, useTheme } from "@/src/theme";
 
 export default function Chat() {
-  const { clientId } = useLocalSearchParams<{ clientId: string }>();
+  const { clientId, thread } = useLocalSearchParams<{ clientId: string; thread?: string }>();
+  const q = thread === "nutri" ? "?thread=nutri" : "";
   const { user } = useAuth();
-  const client = useFetch<any>(user?.role === "trainer" ? `/clients/${clientId}` : null);
+  const client = useFetch<any>(user?.role !== "client" ? `/clients/${clientId}` : null);
   const s = useStyles();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -23,13 +24,13 @@ export default function Chat() {
 
   const load = useCallback(async () => {
     try {
-      setMsgs(await api(`/chat/${clientId}`));
+      setMsgs(await api(`/chat/${clientId}${q}`));
       setErr("");
     } catch (e: any) {
       setErr(e.message);
       setMsgs((p) => p || []);
     }
-  }, [clientId]);
+  }, [clientId, q]);
 
   useEffect(() => {
     load();
@@ -42,7 +43,7 @@ export default function Chat() {
     if (!v) return;
     setText("");
     try {
-      const m = await api(`/chat/${clientId}`, { method: "POST", body: { text: v } });
+      const m = await api(`/chat/${clientId}${q}`, { method: "POST", body: { text: v } });
       setMsgs((p) => [...(p || []), m]);
       setErr("");
     } catch (e: any) {
@@ -53,7 +54,7 @@ export default function Chat() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <Header title={client.data ? `Chat · ${client.data.name}` : "Chat coaching"} back />
+      <Header title={client.data ? `Chat · ${client.data.name}` : thread === "nutri" ? "Chat nutrizionista" : "Chat coaching"} back />
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         {!msgs ? <Loading /> : (
           <FlatList

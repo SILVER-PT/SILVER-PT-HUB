@@ -4,12 +4,22 @@ import { useRouter } from "expo-router";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { useAuth } from "@/src/auth";
 import { api, uploadFile } from "@/src/api";
-import { Avatar, Btn, Card, Chip, ErrorText, Field, H, Screen, T } from "@/src/ui";
+import { Avatar, Btn, Card, Chip, ErrorText, Field, H, Screen, T, Toggle } from "@/src/ui";
+import { AvatarCrop } from "@/src/avatar-crop";
+import { MyNutritionist } from "@/src/my-nutri";
 import { useMediaPicker } from "@/src/media";
 import { DatePicker } from "@/src/calendar";
 import { useTheme } from "@/src/theme";
 
-export const EMPTY_PROFILE = { sex: "M", birth_date: "", height: "", phone: "", goal: "", competitor: false, category: "", injuries: "", notes: "" };
+export const EMPTY_PROFILE = { sex: "M", birth_date: "", height: "", phone: "", goal: "", competitor: false, category: "", off_season: false, contest_date: "", contest_name: "", activity: "1.55", injuries: "", notes: "", anamnesis: {} as Record<string, string> };
+export const BB_CATEGORIES = ["Men's Physique", "Classic Physique", "Bodybuilding", "Bodybuilding Master", "Men's Wellness", "Bikini", "Wellness", "Figure", "Women's Physique", "Fit Model", "Body Fitness"];
+const ACTIVITY = [["1.2", "Sedentario"], ["1.375", "Leggero"], ["1.55", "Moderato"], ["1.725", "Intenso"], ["1.9", "Atleta"]];
+export const ANAMNESIS: [string, string][] = [
+  ["chronic", "Patologie croniche"], ["temporary", "Patologie / disturbi temporanei"], ["injuries", "Infortuni e dolori"], ["surgery", "Interventi chirurgici"],
+  ["medications", "Farmaci e integratori"], ["allergies", "Allergie e intolleranze"], ["family", "Familiarità (diabete, cardiopatie…)"],
+  ["cycle", "Ciclo / ormoni"], ["lifestyle", "Stile di vita, sonno, stress, lavoro"], ["eating", "Abitudini alimentari / DCA"],
+];
+export const daysTo = (d?: string) => (d ? Math.ceil((new Date(d + "T12:00:00").getTime() - Date.now()) / 86400000) : null);
 
 export function ProfileForm({ clientId, initial, name: initialName, onSaved }: { clientId: string; initial: any; name: string; onSaved?: () => void }) {
   const [p, setP] = useState<any>({ ...EMPTY_PROFILE, ...(initial || {}) });
@@ -53,11 +63,37 @@ export function ProfileForm({ clientId, initial, name: initialName, onSaved }: {
       {birthOpen ? <DatePicker yearNav testID="birth-date" value={p.birth_date || "1990-01-01"} onChange={(v) => { set("birth_date")(v); setBirthOpen(false); }} /> : null}
       <Field testID="profile-phone-input" label="Telefono" keyboardType="phone-pad" value={p.phone} onChangeText={set("phone")} />
       <Field testID="profile-goal-input" label="Obiettivo" value={p.goal} onChangeText={set("goal")} />
-      <Field testID="profile-injuries-input" label="Infortuni / patologie" value={p.injuries} onChangeText={set("injuries")} />
+      <T muted>Livello di attività (per il metabolismo totale)</T>
+      <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+        {ACTIVITY.map(([v, l]) => <Chip key={v} testID={`profile-activity-${v}`} label={l} active={String(p.activity) === v} onPress={() => set("activity")(v)} />)}
+      </View>
       <View style={{ flexDirection: "row", gap: 8 }}>
         <Chip testID="profile-competitor-chip" label={p.competitor ? "✓ Atleta bodybuilding" : "Gareggio nel bodybuilding"} active={p.competitor} onPress={() => set("competitor")(!p.competitor)} />
       </View>
-      {p.competitor ? <Field testID="profile-category-input" label="Categoria (es. Men's Physique, Classic)" value={p.category} onChangeText={set("category")} /> : null}
+      {p.competitor ? (
+        <>
+          <T muted>Categoria</T>
+          <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+            {BB_CATEGORIES.map((c) => <Chip key={c} testID={`profile-category-${c}`} label={c} active={p.category === c} onPress={() => set("category")(c)} />)}
+          </View>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Chip testID="profile-offseason-chip" label="Off season" active={!!p.off_season} onPress={() => set("off_season")(true)} />
+            <Chip testID="profile-contest-chip" label="Preparo una gara" active={!p.off_season} onPress={() => set("off_season")(false)} />
+          </View>
+          {!p.off_season ? (
+            <>
+              <Field testID="profile-contest-name" label="Gara" placeholder="es. IFBB Elite Pro Milano" value={p.contest_name} onChangeText={set("contest_name")} />
+              <T muted>Data gara {p.contest_date ? `· ${new Date(p.contest_date + "T12:00:00").toLocaleDateString("it-IT")} (${daysTo(p.contest_date)} giorni)` : ""}</T>
+              <DatePicker testID="contest-date" value={p.contest_date} onChange={set("contest_date")} />
+            </>
+          ) : null}
+        </>
+      ) : null}
+      <H>Anamnesi</H>
+      <T muted style={{ fontSize: 12 }}>Verrà ricordata al team quando crea schede e protocolli alimentari.</T>
+      {ANAMNESIS.map(([k, l]) => (
+        <Field key={k} testID={`anamnesis-${k}`} label={l} multiline value={p.anamnesis?.[k] || ""} onChangeText={(v) => setP((x: any) => ({ ...x, anamnesis: { ...(x.anamnesis || {}), [k]: v } }))} />
+      ))}
       <Field testID="profile-notes-input" label="Note" multiline value={p.notes} onChangeText={set("notes")} />
       {msg ? <T testID="profile-save-message" style={{ color: msg === "Profilo salvato" ? colors.success : colors.error }}>{msg}</T> : null}
       <Btn testID="profile-save-button" title="Salva profilo" loading={busy} onPress={save} />
@@ -71,11 +107,12 @@ export default function Profile() {
   const { colors } = useTheme();
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const [staff, setStaff] = useState({ whatsapp: user?.staff?.whatsapp || "", bio: user?.staff?.bio || "", title: user?.staff?.title || "" });
+  const [staff, setStaff] = useState<any>({ whatsapp: user?.staff?.whatsapp || "", bio: user?.staff?.bio || "", title: user?.staff?.title || "", story: user?.staff?.story || "", story_public: !!user?.staff?.story_public });
   const [banner, setBanner] = useState<{ ok: boolean; text: string } | null>(null);
   const [pw, setPw] = useState({ current: "", next: "", repeat: "" });
   const [pwBusy, setPwBusy] = useState(false);
   const picker = useMediaPicker();
+  const [raw, setRaw] = useState<string | null>(null);
   const isStaff = user?.role !== "client";
   const out = async () => {
     await logout();
@@ -83,8 +120,11 @@ export default function Profile() {
   };
   const changeAvatar = async () => {
     setErr("");
-    const asset = await picker.pick("images");
-    if (!asset) return;
+    const a = await picker.pick("images");
+    if (a) setRaw(a.uri);
+  };
+  const uploadAvatar = async (asset: any) => {
+    setRaw(null);
     setBusy(true);
     try {
       const path = await uploadFile(asset, "avatar.jpg");
@@ -138,7 +178,7 @@ export default function Profile() {
             <T style={{ color: colors.brandPrimary, fontWeight: "800", fontSize: 12 }}>{roleLabel}</T>
           </View>
         </View>
-        {user?.role === "trainer" ? <T testID="profile-invite-code">Codice invito: <T style={{ fontWeight: "900", letterSpacing: 3 }}>{user.invite_code}</T></T> : null}
+        {user?.role !== "client" ? <T testID="profile-invite-code">Codice invito: <T style={{ fontWeight: "900", letterSpacing: 3 }}>{user?.invite_code}</T></T> : null}
         {user?.role === "client" && user.subscription?.name ? <T testID="profile-subscription">Abbonamento: {user.subscription.name} · {user.subscription.billing}</T> : null}
       </Card>
       {isStaff ? (
@@ -146,16 +186,20 @@ export default function Profile() {
           <H>Contatti per i clienti</H>
           <Field testID="staff-title-input" label="Titolo professionale" placeholder="es. Personal Trainer ISSA, Dietista" value={staff.title} onChangeText={(v) => setStaff({ ...staff, title: v })} />
           <Field testID="staff-whatsapp-input" label="Numero WhatsApp (con prefisso, es. 393331234567)" keyboardType="phone-pad" value={staff.whatsapp} onChangeText={(v) => setStaff({ ...staff, whatsapp: v })} />
-          <Field testID="staff-bio-input" label="Presentazione" multiline value={staff.bio} onChangeText={(v) => setStaff({ ...staff, bio: v })} />
-          
+          <Field testID="staff-bio-input" label="Bio" multiline value={staff.bio} onChangeText={(v) => setStaff({ ...staff, bio: v })} />
+          <Field testID="staff-story-input" label="Racconto della tua attività" multiline placeholder="Percorso, metodo, risultati dei clienti…" value={staff.story} onChangeText={(v) => setStaff({ ...staff, story: v })} />
+          <Toggle testID="staff-story-public" label="Mostra il racconto ai clienti" value={!!staff.story_public} onChange={(v) => setStaff({ ...staff, story_public: v })} />
+          <Btn testID="profile-public-page" small variant="ghost" icon="eye" title="Vedi il mio profilo pubblico" onPress={() => router.push(`/staff/${user!.id}`)} />
+
           <Btn testID="staff-save-button" title="Salva contatti" onPress={saveStaff} />
-          <Btn testID="profile-packages-button" variant="dark" icon="pricetags" title={user?.role === "trainer" ? "Gestisci abbonamenti" : "Il mio tariffario"} onPress={() => router.push("/packages")} />
+          <Btn testID="profile-packages-button" variant="dark" icon="pricetags" title={user?.role === "trainer" ? "Gestisci abbonamenti" : "Prestazioni e tariffe"} onPress={() => router.push("/packages")} />
         </>
       ) : (
         <Btn testID="profile-packages-button" variant="dark" icon="pricetags" title="Abbonamenti" onPress={() => router.push("/packages")} />
       )}
       {user?.role === "client" ? (
         <>
+          <MyNutritionist />
           <H>Dati personali</H>
           <ProfileForm clientId={user.id} initial={user.profile} name={user.name} onSaved={refresh} />
         </>
@@ -176,6 +220,7 @@ export default function Profile() {
       <ErrorText text={err} />
       <Btn testID="logout-button" variant="ghost" icon="log-out-outline" title="Esci" onPress={out} />
       {picker.element}
+      <AvatarCrop uri={raw} onCancel={() => setRaw(null)} onDone={uploadAvatar} />
     </Screen>
   );
 }

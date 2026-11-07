@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 8 (v8 feature batch). BACKEND: wrote a new pytest suite /app/backend/tests/test_silverpt_v8_notifications_nutri_blood.py with 21 tests. All 21 pass (100%). It covers: notifications list, unread and read; check-frequency reminders, which are idempotent; exercise search with Italian to English mapping; plan create and update with volume and the notify flag; plan delete with notify_client true/false; the session lifecycle (coach start notifies the client, pause, resume, finish while paused, later edit of started_at/finished_at, invalid date returns 400, delete); progress/plans comparison maths; meals/summary day/week/month including sugars, salt and sodium; custom foods and barcode lookup returning custom:true for the owner only; staff profile and professionals; change nutritionist, with notifications to the old nutritionist, the new one and the trainer; nutri/clients; suggest-coach; blood tests CRUD with the team notification; measurements 'derived'; register rules (nutritionist without a code gets an invite_code, client registers with a nutritionist code, bad code returns 400); nutri chat thread kept separate from the coach chat; nutritionist appointments with staff_id and video_link. AI endpoints work on the current key: /ai/volume returned 200 in about 9s, /ai/nutrition-label 200, and /ai/nutrition-approach returned a real result in the UI. FRONTEND (390x844), all verified: the coin logo on login is centred at 281px (about 1/3 of the width); registration blocks without a photo ('La foto profilo è obbligatoria'); the picker sheet leads to the crop sheet (zoom, move, confirm). Header: 50px coin plus 44px bell; tapping the coin opens /profile; the bell opens /notifications. Agenda: month calendar with prev/next and clickable days, upcoming list, new-appointment sheet with kind chips, a date calendar and an auto Jitsi link (saved with kind Videocall and the meet.jit.si link). Plan editor: the volume card counts planned sets per district; the exercise image sheet searches 'panca piana' and adds start and end images; save opens the notify sheet, and 'save without notify' created no notification. Client plan view: day tabs, expandable start/end images. Session: pause (persisted as 'In pausa · salvata per dopo'), resume, stop sheet with save/delete/continue, edit after completion (calendar and times, values) changed the date, delete removed it from the DB. Progress: plan comparison table with deltas and per-exercise rows. Food diary: period summary card with week/month toggle. Barcode: manual code, edit per-100 values (including micros), label-photo button; the custom food is saved per user. Profile: bodybuilding category chips, off season / contest with date picker, anamnesis fields. Staff page: change-nutritionist sheet with confirmation and warning (cancelled). Blood tests: add a value, chart, delta vs previous (-15). Client detail: check-frequency chips plus WhatsApp templates. Nutritionist: adding an own client works. The nutritionist AI approach was also tested and works. Issues found are mostly minor or business logic, listed below. No deprecated expo packages detected (expo-audio and expo-camera are used).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/nutri/clients", "issue": "The new client gets trainer_id = the nutritionist's trainer_id. So a client added by a nutritionist who registered with a coach code is automatically linked to that coach and appears in the coach's list (UI shows 'Seguito anche dal personal trainer'). The requirement was 'add own clients without PT' and then optionally 'suggest a coach'. Expected trainer_id ''. Reference: extra.py:455"},
+      {"endpoint": "PUT /api/me/nutritionist", "issue": "The trainer is notified 'Cambio nutrizionista' even when the nutritionist did not change (old == new) or when the trainer_id is empty. Reference: extra.py:424"},
+      {"endpoint": "PUT /api/plans/{id}, POST /api/plans", "issue": "volume.weekly_total and per_district values are stored as strings (e.g. '12') because the TextInput value is sent raw. Cast them to numbers on save (frontend or backend)."},
+      {"endpoint": "DELETE /api/plans/{id}", "issue": "The sheet says 'Lo storico delle sessioni resta salvato', but sessions of a deleted plan disappear from /progress/plans (that endpoint iterates over existing plans only)."},
+      {"endpoint": "GET /api/notifications/unread", "issue": "run_reminders runs on every 4s-ish poll and does 2 DB lookups per client for staff (N+1). Consider throttling, e.g. once per hour per user."},
+      {"endpoint": "GET /api/exercises/search", "issue": "Ranking: 'panca piana' (flat barbell bench) returns Machine/Dumbbell Bench Press first because shorter names win. Consider giving the barbell variant a higher score."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "plan-edit save / session delete", "issue": "router.back() is used with no canGoBack fallback. On a deep link (e.g. a browser-notification link opened in a new tab, or a page refresh), the session delete shows the toast \"The action 'GO_BACK' was not handled\" and plan-edit stays on the screen after saving. Use router.canGoBack() ? router.back() : router.replace(...)", "testID": "session-delete-confirm, plan-save-silent", "priority": "MEDIUM"},
+      {"component": "staff/[id] (client viewer)", "issue": "For a client, the header 'Clienti in comune (1)' is shown but the list is hidden (role !== client), so an empty section is visible. Hide the section for clients.", "testID": "staff-profile-card", "priority": "LOW"},
+      {"component": "notifications screen", "issue": "The bell badge in the header still shows the old count (2) while on /notifications, right after the read POST. It only updates on the next poll or navigation.", "testID": "notif-badge", "priority": "LOW"},
+      {"component": "plan-compare chips", "issue": "A plan with an empty name (existing doc 6ae72a18b657b18f3a6d3a37, name '' and 0 days) renders as a blank pill. Add a fallback label such as 'Scheda senza nome'.", "testID": "plan-compare", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Anamnesis reminder when creating a diet", "issue": "ClientReminder (testID anamnesis-reminder) is used only in plan-edit.tsx and client/[id].tsx. It is NOT in nutrition-plan/[clientId].tsx, but the requirement says anamnesis is recalled when creating a plan OR a diet.", "affected_testIDs": ["anamnesis-reminder"]}
+    ],
+    "design_issues": [
+      {"screen": "plans/[clientId]", "issues": ["Duplicate testID plan-ex-{n} across different plans (not unique). Use plan-ex-{planId}-{day}-{n}."]},
+      {"screen": "blood/[clientId] new entry", "issues": ["A new value row defaults its section to 'Emocromo' even for Colesterolo, and the unit is empty, so new values show without a unit."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_silverpt_v8_notifications_nutri_blood.py", "/app/test_reports/pytest/pytest_v8.xml"],
+  "action_items": [
+    "Decide and fix POST /api/nutri/clients so it does not auto-link the client to the nutritionist's coach (trainer_id ''), per 'add own clients without PT'.",
+    "Add the ClientReminder (anamnesis) component to nutrition-plan/[clientId].tsx.",
+    "Replace bare router.back() with a canGoBack fallback in plan-edit.tsx (after save) and session/[id].tsx (after delete), and also in barcode.tsx.",
+    "In PUT /me/nutritionist, notify the trainer only when the nutritionist actually changed.",
+    "Store the volume numbers as numbers; hide the 'Clienti in comune' section for clients; reset the bell badge immediately on the notifications screen; add a fallback name for unnamed plans.",
+    "Optional: throttle run_reminders; keep deleted-plan sessions visible in the progress comparison, or change the sheet text."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1516 lines (>700). Split it into routers (auth, plans/sessions, nutrition, chat, payments).",
+    "extra.py imports from server, and server imports extra lazily inside functions (circular-import pattern). This works but is fragile.",
+    "ai_json catches every exception and returns 502 with a friendly message: graceful error handling is OK."
+  ],
+  "updated_files": ["/app/backend/tests/test_silverpt_v8_notifications_nutri_blood.py"],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "~93% (all requested flows work; 1 integration miss: anamnesis reminder on the diet page, plus minor UI issues)"},
+  "seed_data_creation": "None persisted. Test data was created with the TEST_ prefix (TEST_ users, plans, sessions, meals, blood tests, appointment, custom food) and deleted afterwards by id. Real client data was not modified: nutritionist_id unchanged, profile not saved, custom food and meal created from the UI removed.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: export EXPO_PUBLIC_BACKEND_URL=$(grep EXPO_PUBLIC_BACKEND_URL /app/frontend/.env | cut -d= -f2) && pytest tests/test_silverpt_v8_notifications_nutri_blood.py -n 0. The fixture creates a TEST_ client through /nutri/clients and cleans up via pymongo by id. Server date is Nov 2026. Marco Rossi (client) id 6ae7273ec8f277d3e820ac37, nutri Bianchi id 6ae7448e6571314b6582416d. Picker sheet buttons in the web preview need dispatch_event('click') (otherwise 'outside of viewport'). Session timer is hidden while paused. The real client already has checks.nutritionist=14 (set before this run).",
+  "rca_of_issue": "GO_BACK toast: session/[id].tsx and plan-edit.tsx call router.back() unconditionally, and with an empty history stack (deep link) react-navigation cannot handle GO_BACK."
+}

@@ -12,7 +12,7 @@ export type User = {
   visibility?: { measurements?: boolean; photos?: boolean; nutrition?: boolean };
   nutritionist_id?: string;
   subscription?: Record<string, any> | null;
-  staff?: { whatsapp?: string; bio?: string; title?: string };
+  staff?: { whatsapp?: string; bio?: string; title?: string; story?: string; story_public?: boolean };
   profile?: Record<string, any>;
 };
 

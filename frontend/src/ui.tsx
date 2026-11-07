@@ -11,6 +11,7 @@ import { makeStyles, useTheme } from "@/src/theme";
 import { usesNativeTabs } from "@/src/navigation";
 import { fileUrl, fmtDate } from "@/src/api";
 import { FlipLogo } from "@/src/flip-logo";
+import { NotifBell } from "@/src/notify";
 import { Image } from "expo-image";
 
 export function Laser({ style }: { style?: StyleProp<ViewStyle> }) {
@@ -43,6 +44,7 @@ export function Header({ title, back, right }: { title: string; back?: boolean; 
         ) : null}
         <Text style={s.headerTitle} numberOfLines={1}>{title}</Text>
         {right}
+        <NotifBell />
         <FlipLogo />
       </View>
       <Laser />
@@ -307,7 +309,7 @@ export function Toggle({ label, value, onChange, testID, hint }: { label: string
 }
 
 export const useStyles = makeStyles((c) => ({
-  headerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, height: 56, gap: 8 },
+  headerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, height: 64, gap: 4 },
   headerTitle: { flex: 1, color: c.onSurface, fontSize: 20, fontWeight: "900", fontStyle: "italic", letterSpacing: 1, textTransform: "uppercase" },
   iconBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center", marginLeft: -8 },
   btn: { height: 50, borderRadius: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 18 },

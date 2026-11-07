@@ -27,7 +27,7 @@ export default function Measurements() {
   const { data, loading, reload, error } = useFetch<any[]>(`/measurements?client_id=${clientId}`);
   const client = useFetch<any>(`/clients/${clientId}`);
   const { user } = useAuth();
-  const canEdit = user?.role === "trainer" || (user?.role === "client" && !!user.visibility?.measurements);
+  const canEdit = user?.role === "trainer" || user?.role === "nutritionist" || (user?.role === "client" && !!user.visibility?.measurements);
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -97,6 +97,7 @@ export default function Measurements() {
             <Stat label="Magra" value={m.lean_mass} unit="kg" />
           </View>
           {m.method ? <T muted style={{ fontSize: 12 }}>{m.method} · Σ {m.sum_folds} mm{m.bmi ? ` · BMI ${m.bmi}` : ""}</T> : m.bmi ? <T muted style={{ fontSize: 12 }}>BMI {m.bmi}</T> : null}
+          <Derived d={m.derived} />
           {Object.keys(m.circumferences || {}).length ? <H>Circonferenze (cm)</H> : null}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
             {CIRC.filter(([k]) => m.circumferences?.[k]).map(([k, l]) => (
@@ -131,5 +132,26 @@ export default function Measurements() {
         {editId ? <Btn testID="measure-delete-button" variant="ghost" icon="trash" title={confirmDel ? "Tocca di nuovo per confermare" : "Elimina misurazione"} onPress={() => (confirmDel ? remove() : setConfirmDel(true))} /> : null}
       </Sheet>
     </Screen>
+  );
+}
+
+const DERIVED: [string, string, string][] = [
+  ["bmi", "BMI", ""], ["density", "Bd", "g/ml"], ["fm_pct", "FM", "%"], ["fm_kg", "FM", "kg"], ["fm_index", "FM", "kg/m²"],
+  ["ffm_kg", "FFM", "kg"], ["ffm_pct", "FFM", "%"], ["ffm_index", "FFM", "kg/m²"], ["bmr", "BMR", "kcal"], ["tdee", "MT", "kcal"],
+  ["water_l", "Acqua ideale", "L"], ["amb_cm2", "AMB", "cm²"], ["amc_cm", "AMC", "cm"], ["whr", "Vita/fianchi", ""],
+];
+
+function Derived({ d }: { d?: Record<string, number> }) {
+  if (!d || !Object.keys(d).length) return null;
+  return (
+    <View style={{ gap: 6 }} testID="derived-values">
+      <H>Indici calcolati</H>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+        {DERIVED.filter(([k]) => d[k] != null).map(([k, l, u]) => (
+          <T key={k} testID={`derived-${k}`} style={{ fontSize: 13, width: "48%" }}><T muted style={{ fontSize: 13 }}>{l}{u ? ` (${u})` : ""}: </T>{d[k]}</T>
+        ))}
+      </View>
+      <T muted style={{ fontSize: 10 }}>FM/FFM metro = indice per m² · BMR Katch-McArdle · MT = BMR × livello attività · AMB/AMC dal braccio e plica tricipitale</T>
+    </View>
   );
 }

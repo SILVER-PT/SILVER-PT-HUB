@@ -33,17 +33,19 @@ export function applyProtocol(ex: any, protoName: string, oneRm: number) {
   return { ...ex, protocol: p.name, scheme, sets: String(scheme.length), reps: scheme[0].reps, load: scheme[0].load, rir: p.rir || ex.rir, rest: p.rest || ex.rest, technique: p.technique || ex.technique || "" };
 }
 
+export const DISTRICTS = ["Petto", "Dorso", "Spalle", "Bicipiti", "Tricipiti", "Quadricipiti", "Femorali", "Glutei", "Polpacci", "Addome"];
+
 const OPT = {
   goal: ["Ipertrofia", "Forza", "Ricomposizione", "Dimagrimento", "Contest prep", "Ricondizionamento"],
   split: ["Full body", "Upper / Lower", "Push / Pull / Legs", "Bro split", "Torso / Gambe + PPL"],
   freq: ["2", "3", "4", "5", "6"],
-  districts: ["Petto", "Dorso", "Spalle", "Bicipiti", "Tricipiti", "Quadricipiti", "Femorali", "Glutei", "Polpacci", "Addome"],
+  districts: DISTRICTS,
   stimulus: ["Posizione di allungamento", "Posizione di accorciamento", "Entrambe"],
   target: ["Forza", "Ipertrofia", "Fibre rosse (lente/resistenza)", "Fibre bianche (esplosive)"],
   category: ["Gold standard", "Multiarticolari", "Mista"],
 };
 
-export function AiPlanSheet({ visible, onClose, clientId, onPlan }: { visible: boolean; onClose: () => void; clientId: string; onPlan: (p: any) => void }) {
+export function AiPlanSheet({ visible, onClose, clientId, onPlan, volume }: { visible: boolean; onClose: () => void; clientId: string; onPlan: (p: any) => void; volume?: any }) {
   const [mode, setMode] = useState<"prompt" | "guided">("guided");
   const [prompt, setPrompt] = useState("");
   const [p, setP] = useState<any>({ goal: "Ipertrofia", split: "Upper / Lower", freq: "4", districts: [], stimulus: "Entrambe", target: "Ipertrofia", category: "Mista", techniques: [] });
@@ -55,7 +57,7 @@ export function AiPlanSheet({ visible, onClose, clientId, onPlan }: { visible: b
     setBusy(true);
     setErr("");
     try {
-      const plan = await api("/ai/plan", { method: "POST", body: { client_id: clientId, prompt, params: mode === "guided" ? { ...p, frequenza_settimanale: p.freq } : {} } });
+      const plan = await api("/ai/plan", { method: "POST", body: { client_id: clientId, prompt, params: { ...(mode === "guided" ? { ...p, frequenza_settimanale: p.freq } : {}), volume_settimanale_serie: volume || {} } } });
       onPlan(plan);
       onClose();
     } catch (e: any) {

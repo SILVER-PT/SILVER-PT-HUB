@@ -4,8 +4,11 @@ import { useLocalSearchParams } from "expo-router";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { useAuth } from "@/src/auth";
 import { api, fmtDate, useFetch } from "@/src/api";
-import { Btn, Card, Empty, ErrorText, Field, H, Loading, Screen, Stat, T } from "@/src/ui";
+import { Btn, Card, Chip, ChipRow, Empty, ErrorText, Field, H, Loading, Screen, Stat, T } from "@/src/ui";
 import { useTheme } from "@/src/theme";
+import { ClientReminder } from "@/src/client-reminder";
+
+const APPROACHES = ["Mediterranea", "Low carb", "Chetogenica", "Carb cycling", "Digiuno intermittente", "Flessibile (IIFYM)", "Ipocalorica", "Reverse diet", "Peak week"];
 
 const DEFAULT_MEALS = ["Colazione", "Spuntino", "Pranzo", "Merenda", "Cena"];
 
@@ -18,6 +21,20 @@ export default function NutritionPlan() {
   const [f, setF] = useState<any>(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [ai, setAi] = useState<any>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiErr, setAiErr] = useState("");
+  const askAi = async () => {
+    setAiBusy(true);
+    setAiErr("");
+    try {
+      setAi(await api("/ai/nutrition-approach", { method: "POST", body: { client_id: clientId, notes: f?.notes || "" } }));
+    } catch (e: any) {
+      setAiErr(e.message);
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (data && !f) {
@@ -26,6 +43,7 @@ export default function NutritionPlan() {
         targets: { kcal: String(t.kcal ?? ""), protein: String(t.protein ?? ""), carbs: String(t.carbs ?? ""), fat: String(t.fat ?? "") },
         meal_plan: data.meal_plan?.length ? data.meal_plan : DEFAULT_MEALS.map((meal) => ({ meal, items: "" })),
         notes: data.notes || "",
+        approach: data.approach || "",
       });
     }
   }, [data, f]);
@@ -54,6 +72,7 @@ export default function NutritionPlan() {
             <Stat label="Kcal" value={t.kcal} /><Stat label="Prot" value={t.protein} unit="g" /><Stat label="Carb" value={t.carbs} unit="g" /><Stat label="Gras" value={t.fat} unit="g" />
           </View>
         ) : null}
+        {data?.approach && !data?.hidden ? <T style={{ fontWeight: "800", color: colors.brandPrimary }}>Approccio: {data.approach}</T> : null}
         {data?.hidden ? <Card testID="meal-plan-hidden"><T muted>Il tuo piano alimentare viene seguito direttamente dal tuo team.</T></Card> : null}
         {!data?.hidden && !data?.meal_plan?.length ? <Empty icon="document-text-outline" text="Il piano alimentare non è ancora stato inserito." /> : null}
         {data?.meal_plan?.map((m: any, i: number) => (
@@ -74,6 +93,23 @@ export default function NutritionPlan() {
 
   return (
     <Screen title="Piano alimentare" back>
+      <ClientReminder clientId={clientId} />
+      <H>Approccio</H>
+      <ChipRow>
+        {APPROACHES.map((a) => <Chip key={a} testID={`nutri-approach-${a}`} label={a} active={f.approach === a} onPress={() => setF({ ...f, approach: f.approach === a ? "" : a })} />)}
+      </ChipRow>
+      <Field testID="nutri-approach-input" placeholder="Oppure scrivi l'approccio" value={f.approach} onChangeText={(v) => setF({ ...f, approach: v })} />
+      <Btn testID="nutri-approach-ai" small variant="ghost" icon="sparkles" title="Fai scegliere l'approccio all'AI" loading={aiBusy} onPress={askAi} />
+      {ai ? (
+        <Card accent testID="nutri-approach-ai-result">
+          <T style={{ fontWeight: "900" }}>{ai.approach}</T>
+          <T muted style={{ fontSize: 13 }}>{ai.kcal} kcal · P {ai.protein}g · C {ai.carbs}g · G {ai.fat}g</T>
+          {ai.rationale ? <T style={{ fontSize: 13 }}>{ai.rationale}</T> : null}
+          {ai.cautions ? <T style={{ fontSize: 13, color: colors.warning }}>⚠ {ai.cautions}</T> : null}
+          <Btn testID="nutri-approach-apply" small icon="checkmark" title="Applica approccio e obiettivi" onPress={() => { setF({ ...f, approach: ai.approach, targets: { kcal: String(ai.kcal ?? ""), protein: String(ai.protein ?? ""), carbs: String(ai.carbs ?? ""), fat: String(ai.fat ?? "") } }); setAi(null); }} />
+        </Card>
+      ) : null}
+      <ErrorText text={aiErr} />
       <H>Obiettivi giornalieri</H>
       <View style={{ flexDirection: "row", gap: 8 }}>
         <Field testID="target-kcal-input" label="Kcal" keyboardType="decimal-pad" value={f.targets.kcal} onChangeText={setT("kcal")} style={{ flex: 1 }} />

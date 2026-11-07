@@ -14,7 +14,7 @@ export default function TabsLayout() {
   const nutri = user.role === "nutritionist";
   const tabs = [
     { name: "index", label: trainer || nutri ? "Clienti" : "Home", icon: trainer || nutri ? "people" : "barbell", sf: trainer || nutri ? "person.2.fill" : "dumbbell.fill", hidden: false },
-    { name: "agenda", label: "Agenda", icon: "calendar", sf: "calendar", hidden: nutri },
+    { name: "agenda", label: "Agenda", icon: "calendar", sf: "calendar", hidden: false },
     { name: "feed", label: trainer ? "Video" : "Cibo", icon: trainer ? "videocam" : "nutrition", sf: trainer ? "video.fill" : "fork.knife", hidden: nutri },
     { name: "profile", label: "Profilo", icon: "person-circle", sf: "person.crop.circle.fill", hidden: false },
   ];

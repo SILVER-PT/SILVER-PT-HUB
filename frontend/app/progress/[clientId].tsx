@@ -6,6 +6,7 @@ import { useFetch } from "@/src/api";
 import { Card, Chip, ChipRow, Empty, H, Loading, Screen, Stat, T } from "@/src/ui";
 import { useTheme } from "@/src/theme";
 import { CIRC } from "@/app/measurements/[clientId]";
+import { PlanCompare } from "@/src/plan-compare";
 
 const METRICS = [["max_load", "Carico max", "kg"], ["total_reps", "Ripetizioni", ""], ["volume", "Volume", "kg"], ["avg_rir", "RIR medio", ""], ["avg_execution", "Esecuzione", "/10"]];
 
@@ -111,6 +112,7 @@ export default function Progress() {
           </Card>
         </>
       )}
+      <PlanCompare clientId={clientId} />
     </Screen>
   );
 }

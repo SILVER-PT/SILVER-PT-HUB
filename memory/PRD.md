@@ -46,3 +46,15 @@ JWT email/password with roles (client registers with trainer invite code) · Ope
 - P1: native date/time pickers, push reminders for appointments, photo side-by-side comparison
 - P1: meal delete confirmation, trainer macro targets per client
 - P2: chat trainer-client, PDF report export, subscription/payments for coaching packages
+
+## v8 (June 2026) — DONE (iteration_8 tested)
+- Coin logo everywhere (login 1/3 screen, home, app icon/splash); header coin 50px → tap spins + opens Profile; notification bell (in-app + browser notifications on web)
+- Backend module `backend/extra.py`: notifications + reminders (subscription expiry, check frequency per staff), exercise library (free-exercise-db), AI helpers (volume, nutrition label, blood scan, nutrition approach — uses OPENAI_API_KEY if set else Emergent key), session pause/resume/delete, plan delete with notify, plan comparison, meals summary, custom foods, staff public profile, nutritionist choice, nutri-owned clients, suggest coach, blood tests
+- Plan builder: weekly/district volume + AI, exercise images, anamnesis/category reminder, notify confirm; client plan view with day tabs + images
+- Session: pause/resume, save for later, stop sheet (save/delete), edit after save incl. date/time, 4s live sync
+- Agenda: month calendar + scrollable upcoming list, kinds/durations, Jitsi or own video link; WhatsApp templates
+- Derived ISSA indexes, anamnesis, BB categories, contest countdown/off season, blood tests screen, nutritionist approach
+## Backlog
+- Real push notifications (native) — postponed by user
+- User will add own OpenAI key later (OPENAI_API_KEY)
+- Refactor server.py into routers

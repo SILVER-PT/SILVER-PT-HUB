@@ -9,6 +9,35 @@ import { useMediaPicker } from "@/src/media";
 import { useTheme } from "@/src/theme";
 
 export const MEALS = ["colazione", "pranzo", "cena", "spuntino"];
+const micros = (f: any) => Object.fromEntries(["sugars", "fiber", "salt", "sodium"].map((k) => [k, f[k] === "" || f[k] == null ? null : num(f[k])]));
+
+// Day / week / month intake, recalculated after every food added or removed.
+function PeriodSummary({ s }: { s: any }) {
+  const { colors } = useTheme();
+  const [p, setP] = useState<"week" | "month">("week");
+  const x = s[p];
+  const cell = (l: string, v: number, u: string) => (
+    <View style={{ flex: 1, minWidth: 70 }}><T muted style={{ fontSize: 11 }}>{l}</T><T style={{ fontWeight: "900" }}>{Math.round(v)}<T muted style={{ fontSize: 11 }}> {u}</T></T></View>
+  );
+  return (
+    <Card testID="nutrition-period-summary">
+      <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+        <T style={{ flex: 1, fontWeight: "900" }}>Introito {p === "week" ? "settimana" : "mese"}</T>
+        <Chip testID="summary-week" label="Settimana" active={p === "week"} onPress={() => setP("week")} />
+        <Chip testID="summary-month" label="Mese" active={p === "month"} onPress={() => setP("month")} />
+      </View>
+      <T muted style={{ fontSize: 12 }}>Totale ({x.days} giorni registrati)</T>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {cell("Kcal", x.total.kcal, "")}{cell("Prot", x.total.protein, "g")}{cell("Carbo", x.total.carbs, "g")}{cell("Grassi", x.total.fat, "g")}
+      </View>
+      <T muted style={{ fontSize: 12 }}>Media giornaliera</T>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {cell("Kcal", x.avg.kcal, "")}{cell("Prot", x.avg.protein, "g")}{cell("Carbo", x.avg.carbs, "g")}{cell("Grassi", x.avg.fat, "g")}
+      </View>
+      <T style={{ fontSize: 12, color: colors.onSurfaceTertiary }}>Oggi: zuccheri {s.day.total.sugars}g · fibre {s.day.total.fiber}g · sale {s.day.total.salt}g · sodio {s.day.total.sodium}g</T>
+    </Card>
+  );
+}
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 
 export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: { clientId: string; tab?: boolean; readOnly?: boolean; title?: string }) {
@@ -21,6 +50,8 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
   const { data, loading, reload } = useFetch<any[]>(`/meals?client_id=${clientId}&date=${date}`);
   const plan = useFetch<any>(`/clients/${clientId}/nutrition`);
   const comments = useFetch<any[]>(`/diary/${clientId}/${date}/comments`);
+  const summary = useFetch<any>(hide ? null : `/meals/summary?client_id=${clientId}&date=${date}`);
+  const refresh = () => { reload(); summary.reload(); };
   const tg = plan.data?.targets || {};
   const [meal, setMeal] = useState("pranzo");
   const [form, setForm] = useState<any | null>(null);
@@ -49,15 +80,15 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
   const save = async () => {
     try {
       if (form.id) {
-        await api(`/meals/${form.id}`, { method: "PUT", body: { name: form.name, grams: num(form.grams) || null, kcal: num(form.kcal), protein: num(form.protein), carbs: num(form.carbs), fat: num(form.fat) } });
+        await api(`/meals/${form.id}`, { method: "PUT", body: { name: form.name, grams: num(form.grams) || null, kcal: num(form.kcal), protein: num(form.protein), carbs: num(form.carbs), fat: num(form.fat), ...micros(form) } });
         setForm(null);
-        reload();
+        refresh();
         return;
       }
       await api("/meals", { method: "POST", body: { client_id: clientId, date, meal_type: meal, name: form.name || "Alimento", grams: num(form.grams) || null,
-        kcal: num(form.kcal), protein: num(form.protein), carbs: num(form.carbs), fat: num(form.fat), source: form.source } });
+        kcal: num(form.kcal), protein: num(form.protein), carbs: num(form.carbs), fat: num(form.fat), ...micros(form), source: form.source } });
       setForm(null);
-      reload();
+      refresh();
     } catch (e: any) {
       setErr(e.message);
     }
@@ -65,7 +96,7 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
 
   const del = async (id: string) => {
     await api(`/meals/${id}`, { method: "DELETE" });
-    reload();
+    refresh();
   };
 
   const setF = (k: string) => (v: string) => setForm((p: any) => ({ ...p, [k]: v }));
@@ -103,6 +134,7 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
           )}
         </Card>
       )}
+      {summary.data && !summary.data.hidden ? <PeriodSummary s={summary.data} /> : null}
       <View style={{ flexDirection: "row", gap: 8 }}>
         <Btn testID="nutrition-plan-button" small variant="dark" icon="document-text" title={user?.role === "client" ? "Piano" : "Obiettivi e piano"} style={{ flex: 1 }} onPress={() => router.push(`/nutrition-plan/${clientId}`)} />
         <Btn testID="food-history-button" small variant="dark" icon="time" title="Storico" style={{ flex: 1 }} onPress={() => router.push(`/food-history/${clientId}`)} />
@@ -127,7 +159,7 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
         <View key={m} style={{ gap: 8 }}>
           <H>{cap(m)}</H>
           {data!.filter((x) => x.meal_type === m).map((x) => (
-            <Card key={x.id} testID={`meal-item-${x.id}`} onPress={user?.role !== "client" ? () => setForm({ id: x.id, name: x.name, grams: x.grams ? String(x.grams) : "", kcal: String(x.kcal ?? ""), protein: String(x.protein ?? ""), carbs: String(x.carbs ?? ""), fat: String(x.fat ?? ""), source: x.source }) : undefined} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Card key={x.id} testID={`meal-item-${x.id}`} onPress={user?.role !== "client" ? () => setForm({ id: x.id, name: x.name, grams: x.grams ? String(x.grams) : "", kcal: String(x.kcal ?? ""), protein: String(x.protein ?? ""), carbs: String(x.carbs ?? ""), fat: String(x.fat ?? ""), sugars: String(x.sugars ?? ""), fiber: String(x.fiber ?? ""), salt: String(x.salt ?? ""), sodium: String(x.sodium ?? ""), source: x.source }) : undefined} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <Ionicons name={x.source === "barcode" ? "barcode" : x.source === "ai" ? "sparkles" : "create"} size={18} color={colors.brandPrimary} />
               <View style={{ flex: 1 }}>
                 <T style={{ fontWeight: "800" }} numberOfLines={1}>{x.name}{!hide && x.grams ? ` · ${x.grams}g` : ""}</T>
@@ -154,6 +186,15 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
           <Field testID="food-protein-input" label="Prot g" keyboardType="decimal-pad" value={fv("protein")} onChangeText={setF("protein")} style={{ flex: 1 }} />
           <Field testID="food-carbs-input" label="Carbo g" keyboardType="decimal-pad" value={fv("carbs")} onChangeText={setF("carbs")} style={{ flex: 1 }} />
           <Field testID="food-fat-input" label="Grassi g" keyboardType="decimal-pad" value={fv("fat")} onChangeText={setF("fat")} style={{ flex: 1 }} />
+        </View>
+        <T muted style={{ fontSize: 12 }}>Facoltativi</T>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Field testID="food-sugars-input" label="di cui zuccheri g" keyboardType="decimal-pad" value={fv("sugars")} onChangeText={setF("sugars")} style={{ flex: 1 }} />
+          <Field testID="food-fiber-input" label="Fibre g" keyboardType="decimal-pad" value={fv("fiber")} onChangeText={setF("fiber")} style={{ flex: 1 }} />
+        </View>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Field testID="food-salt-input" label="Sale g" keyboardType="decimal-pad" value={fv("salt")} onChangeText={setF("salt")} style={{ flex: 1 }} />
+          <Field testID="food-sodium-input" label="Sodio g" keyboardType="decimal-pad" value={fv("sodium")} onChangeText={setF("sodium")} style={{ flex: 1 }} />
         </View>
         </>) : null}
         <Btn testID="food-save-button" title={form?.id ? "Salva modifiche" : `Aggiungi a ${meal}`} onPress={save} />
