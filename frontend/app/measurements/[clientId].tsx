@@ -6,6 +6,7 @@ import { Btn, Card, Empty, ErrorText, Field, H, Loading, Screen, Sheet, Stat, T 
 import { useTheme } from "@/src/theme";
 import { useAuth } from "@/src/auth";
 import { DatePicker } from "@/src/calendar";
+import { BodyFigure } from "@/src/body-figure";
 
 export const CIRC = [["collo", "Collo"], ["spalle", "Spalle"], ["torace", "Torace"], ["braccio_dx", "Braccio dx"], ["braccio_sx", "Braccio sx"], ["vita", "Vita"], ["addome", "Addome (ombelico)"], ["fianchi", "Fianchi"], ["coscia_dx", "Coscia dx"], ["coscia_sx", "Coscia sx"], ["polpaccio_dx", "Polpaccio dx"], ["polpaccio_sx", "Polpaccio sx"]];
 export const FOLDS = [["pettorale", "Pettorale"], ["ascellare", "Ascellare media"], ["tricipite", "Tricipite"], ["sottoscapolare", "Sottoscapolare"], ["addominale", "Addominale"], ["soprailiaca", "Soprailiaca"], ["coscia", "Coscia"]];
@@ -85,6 +86,7 @@ export default function Measurements() {
       {noAge && !error ? <Card><T muted>Per il calcolo della % di grasso (Jackson-Pollock + Siri) inserisci sesso e data di nascita nel profilo.</T></Card> : null}
       {loading && !data ? <Loading /> : null}
       {data?.length === 0 ? <Empty icon="body-outline" text="Nessuna misurazione registrata." /> : null}
+      {user?.role !== "client" && data?.[0] ? <BodyFigure m={data[0]} sex={client.data?.profile?.sex} /> : null}
       {data?.map((m, i) => (
         <Card key={m.id} accent={i === 0} testID={`measurement-card-${m.id}`}>
           <View style={{ flexDirection: "row", alignItems: "center" }}>

@@ -8,6 +8,7 @@ import { useAuth } from "@/src/auth";
 import { api, useFetch } from "@/src/api";
 import { Empty, ErrorText, Header, Loading } from "@/src/ui";
 import { makeStyles, useTheme } from "@/src/theme";
+import { decryptMsg, encryptFor, myKeys } from "@/src/e2e";
 
 export default function Chat() {
   const { clientId, thread } = useLocalSearchParams<{ clientId: string; thread?: string }>();
@@ -21,6 +22,15 @@ export default function Chat() {
   const [text, setText] = useState("");
   const [err, setErr] = useState("");
   const list = useRef<FlatList>(null);
+  const [me, setMe] = useState<any>(null);
+  const [keys, setKeys] = useState<Record<string, string | null>>({});
+
+  useEffect(() => {
+    if (!user) return;
+    myKeys(user.id, (user as any).public_key).then(setMe).catch(() => {});
+    api(`/chat/${clientId}/keys${q}`).then(setKeys).catch(() => {});
+  }, [user, clientId, q]);
+  const allKeys = me && Object.keys(keys).length > 1 && Object.entries(keys).every(([uid, pk]) => uid === me.uid || !!pk);
 
   const load = useCallback(async () => {
     try {
@@ -43,7 +53,8 @@ export default function Chat() {
     if (!v) return;
     setText("");
     try {
-      const m = await api(`/chat/${clientId}${q}`, { method: "POST", body: { text: v } });
+      const body = allKeys ? { text: "", e2e: encryptFor(v, me, { ...keys, [me.uid]: me.pk }) } : { text: v };
+      const m = await api(`/chat/${clientId}${q}`, { method: "POST", body });
       setMsgs((p) => [...(p || []), m]);
       setErr("");
     } catch (e: any) {
@@ -55,6 +66,9 @@ export default function Chat() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <Header title={client.data ? `Chat · ${client.data.name}` : thread === "nutri" ? "Chat nutrizionista" : "Chat coaching"} back />
+      <Text testID="chat-e2e-banner" style={{ color: colors.silver, fontSize: 11, textAlign: "center", paddingVertical: 4 }}>
+        {allKeys ? "🔒 Crittografia end-to-end attiva" : "🔐 Messaggi cifrati sul server · l'end-to-end si attiva quando entrambi aprono la chat"}
+      </Text>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         {!msgs ? <Loading /> : (
           <FlatList
@@ -69,7 +83,8 @@ export default function Chat() {
               const mine = m.author_id === user?.id;
               return (
                 <View style={[s.bubble, mine ? s.mine : s.theirs]} testID={`chat-msg-${m.id}`}>
-                  <Text style={[s.text, mine && { color: colors.onBrandPrimary }]}>{m.text}</Text>
+                  <Text style={[s.text, mine && { color: colors.onBrandPrimary }]}>{decryptMsg(m, me) ?? "🔒 Messaggio cifrato end-to-end: accedi con la password su questo dispositivo per leggerlo"}</Text>
+                  {m.e2e ? <Ionicons name="lock-closed" size={10} color={mine ? colors.onBrandPrimary : colors.muted} /> : null}
                   <Text style={[s.time, mine && { color: colors.onBrandPrimary }]}>{new Date(m.created_at).toLocaleString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</Text>
                 </View>
               );

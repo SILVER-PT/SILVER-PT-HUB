@@ -1,0 +1,47 @@
+{
+  "summary": "Retest #2 of the iteration_10 fixes. Backend: 20 of 22 pass. PUT /me/public-key without key_backup now returns 422. Two failures: staff can read clients' key_backup. Frontend: E2E works for a NEW account in all three cases: (a) reload in the same browser, (b) fresh browser B restores the same public key and reads older E2E messages, (c) no wrap key and no local key means no PUT and a fallback banner. Two E2E regressions remain. 1) If the page reloads or the app restarts between login and the first chat open, the wrap key is never stored, so E2E stays off on that device. 2) Marco (cliente@silverpt.it) is stuck in fallback for good, because his backup was wrapped with the old v1 derivation. Food plan parsing, hiding already-logged items, Seconda colazione under colazione, ConsentGate loading/error behaviour and the nutritionist Nutrition logo all pass. One new parser bug: names starting with 'di' get cut ('dischi' -> 'schi', 'Diet coke' -> 'et coke').",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/clients, GET /api/clients/{id}", "issue": "ser() returns the client's key_backup (encrypted E2E secret key) to the trainer and nutritionist. The wrap key is a single fast SHA-512 of uid:email:password, so staff (who also know the email and uid) can brute-force weak passwords offline and decrypt the E2E chat. Strip key_backup from ser() and return it only from GET /me/key-backup.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/auth/me, POST /api/auth/login", "issue": "Both include key_backup in the user object. Not needed, since the client already uses /me/key-backup."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "nutrition.tsx parseItem", "issue": "The regex /^(di|d')\\s*/i has no word boundary: 'dischi di riso 30g' -> 'schi di riso', 'Diet coke 330ml' -> 'et coke'. The typographic apostrophe ’ (iOS smart punctuation default) is not handled: \"100g d’orzo\" -> \"d’orzo\". Use /^(di\\s+|d['’]\\s*)/i. Reference: /app/frontend/src/nutrition.tsx:130", "testID": "plan-item-edit-*", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "E2E wrap key persistence (login -> reload/app restart -> chat)", "issue": "setPassphrase() keeps the secret only in memory (pendingSecret). The wrap key is derived and stored only when myKeys() runs, i.e. the first time the chat screen opens in the same JS session. Reproduced with a new TEST user: login, page.reload, open /chat/:id -> localStorage has only 'token', no /me/key-backup call, fallback banner, and the older E2E message shows as locked. Same thing on native if the app is killed before opening the chat. Fix: after signIn resolves (uid known), derive and store the wrap key right away from login.tsx, or use a uid-free derivation stored inside setPassphrase. Reference: /app/frontend/src/e2e.ts:23-36, /app/frontend/app/login.tsx:49", "affected_testIDs": ["chat-e2e-banner"]},
+      {"flow": "E2E for existing accounts with a v1 backup (Marco)", "issue": "Marco's key_backup was wrapped with the old key SHA-512('silverpt-e2e:' + email:password), checked offline with pynacl: it opens with v1 and the derived pk matches the stored one. The new code only tries v2 ('silverpt-e2e:v2:{uid}:...'). Unwrap fails, myKeys returns null (e2e.ts:57-58), and Marco can never use E2E on any new device: banner shows the server-sealed fallback, local key never stored. Fix: when a fresh password secret is available, also try the v1 key; on success re-wrap with v2 and PUT the same pk. Or, since a freshly typed password is authoritative, treat a backup that can't be opened as stale.", "affected_testIDs": ["chat-e2e-banner", "hub-chat-button"]}
+    ],
+    "design_issues": [
+      {"screen": "Chat", "issues": ["The locked-message text 'leggibile solo sul dispositivo su cui è stato ricevuto' is misleading now that keys sync through the backup. Suggest 'accedi di nuovo con la password per leggerlo'."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_silverpt_v11_e2e_keys_plan.py", "/app/backend/tests/test_silverpt_v10_fixes.py", "/app/test_reports/pytest/pytest_v11.xml"],
+  "action_items": [
+    "HIGH: Remove key_backup (and ideally public_key) from ser() output for other users (/clients, /clients/{id}, login, auth/me). Serve it only through GET /me/key-backup.",
+    "HIGH: Store the wrap key at login time, not on first chat open. Right after signIn returns user.id, call e.g. initE2E(uid), which derives and saves the wrap key and restores the key pair.",
+    "HIGH: Migrate v1 backups. If the v2 unwrap fails and a fresh password is available, try the v1 derivation SHA-512('silverpt-e2e:'+email:password)[:32], then re-wrap with v2 and PUT the same pk. Marco is currently stuck in fallback.",
+    "MEDIUM: Fix the parseItem 'di' prefix regex (word boundary) and support the ’ apostrophe (nutrition.tsx:130).",
+    "MEDIUM (carried over from iteration 10): ConsentGate only wraps (tabs)/_layout. Stack routes such as /nutrition/:id and /chat/:id open without accepting consents (verified with a TEST user with consents removed). Wrap the root layout instead.",
+    "LOW: On logout, clear silverpt_e2e_wrap_<uid> and silverpt_e2e_<uid> from device storage (shared devices).",
+    "LOW: A local key that differs from the server pk overwrites the server pk and backup (e2e.ts:69-71). Two devices with different old local keys will keep overwriting each other. Prefer the backup when one exists and it opens."
+  ],
+  "critical_code_review_comments": [
+    "e2e.ts:57-58: returning null when the backup can't be opened is correct for the no-password case. When the user has just typed the password, it should migrate or replace the backup instead.",
+    "consent-gate.tsx:21: if /legal/docs fails, the app opens without consents (by design per request). An outage of that endpoint therefore lets users skip the consents.",
+    "nutrition.tsx:134: meal matching uses includes(). 'Spuntino pre-cena' would show under both cena and spuntino, and 'Merenda' maps to no meal.",
+    "Plan dedupe only matches an exact parsed name. If the user renames the item in the edit form, the dismissal is stored only on that device, so it can still be duplicated on another device."
+  ],
+  "updated_files": ["/app/backend/tests/test_silverpt_v11_e2e_keys_plan.py (new)", "/app/backend/tests/test_silverpt_v10_fixes.py (test_put_without_backup_keeps_old now expects 422)"],
+  "success_rate": {"backend": "91% (20/22)", "frontend": "~80% (E2E new account a/b/c, plan parsing/hiding/seconda colazione, ConsentGate blank/fallback, nutrition logo pass; E2E reload-before-chat and the v1 account fail)"},
+  "seed_data_creation": "Created and then deleted TEST users test_v11_e2e@example.com (given subscription.chat=true in Mongo) and test_v11_food@example.com (nutrition plan, 1 meal, consents cleared for the gate test), plus the pytest fixture user, along with their chat messages, meals, plans and notifications. Deleted the 3 TEST chat messages sent in Marco's coaching chat, and the 3 trainer notifications they created, by id. Marco's nutrition plan was not touched (Colazione 80g avena, Seconda colazione Latte 200ml, 2200 kcal/160 P). Marco's and the trainer's public_key/key_backup were not modified.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run: cd /app/backend && export EXPO_PUBLIC_BACKEND_URL=$(grep EXPO_PUBLIC_BACKEND_URL /app/frontend/.env | cut -d= -f2) && set -a && . ./.env && set +a && pytest tests/test_silverpt_v11_e2e_keys_plan.py tests/test_silverpt_v10_fixes.py -n 0. The coaching chat needs user.subscription.chat=true; give TEST users this in Mongo. The hub button is hub-chat-button. For E2E: in-app navigation right after login works; page.goto/reload before the first chat open loses the in-memory password (bug). Marco's backup opens only with v1: sha512('silverpt-e2e:cliente@silverpt.it:Cliente123!')[:32] (pynacl was pip-installed for this check). The trainer has a public_key but no key_backup (legacy).",
+  "rca_of_issue": "E2E fallback for Marco: the key_backup was created by the iteration-10 code with the v1 wrap key, and the new code derives a v2 key that includes the uid. secretbox.open fails, and myKeys returns null without migrating. E2E off after a reload: pendingSecret lives only in module memory and is consumed lazily by wrapKey() inside myKeys(). A full reload between login and the first chat open loses it, so no wrap key is ever stored."
+}

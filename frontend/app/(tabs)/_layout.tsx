@@ -7,14 +7,19 @@ import { usesNativeTabs } from "@/src/navigation";
 import { useTheme } from "@/src/theme";
 
 export default function TabsLayout() {
+  return <TabsInner />;
+}
+
+function TabsInner() {
   const { user } = useAuth();
   const { colors } = useTheme();
   if (!user) return <Redirect href="/login" />;
   const trainer = user.role === "trainer";
   const nutri = user.role === "nutritionist";
   const tabs = [
-    { name: "index", label: trainer || nutri ? "Clienti" : "Home", icon: trainer || nutri ? "people" : "barbell", sf: trainer || nutri ? "person.2.fill" : "dumbbell.fill", hidden: false },
+    { name: "index", label: trainer || nutri ? "Clienti" : "Home", icon: trainer || nutri ? "people" : "home", sf: trainer || nutri ? "person.2.fill" : "house.fill", hidden: false },
     { name: "agenda", label: "Agenda", icon: "calendar", sf: "calendar", hidden: false },
+    { name: "training", label: trainer || nutri ? "Il mio workout" : "Training", icon: "barbell", sf: "figure.strengthtraining.traditional", hidden: false },
     { name: "feed", label: trainer ? "Video" : "Cibo", icon: trainer ? "videocam" : "nutrition", sf: trainer ? "video.fill" : "fork.knife", hidden: nutri },
     { name: "profile", label: "Profilo", icon: "person-circle", sf: "person.crop.circle.fill", hidden: false },
   ];

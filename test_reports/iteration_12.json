@@ -1,0 +1,31 @@
+{
+  "summary": "Retest #3 of the iteration_11 fixes. All 6 items pass. Backend: the new v12 suite passes 7 tests and skips 1; the v10 and v11 regression suites pass 22 of 22. key_backup is gone from /auth/login, /auth/me, /clients (trainer and nutritionist) and /clients/{id}; it is returned only by /me/key-backup. E2E: signIn calls myKeys right away, so after login localStorage holds the wrap key and the key pair (GET /me/key-backup and PUT /me/public-key are sent at login). A new TEST user can log in, reload, open /chat/:id directly and see 'Crittografia end-to-end attiva'; messages are stored E2E and still readable after reload. Marco on a fresh browser: his v1 backup is restored with the same public key, the backup is re-uploaded as v2 (checked offline with pynacl: v1 no longer opens it, v2 does, pk unchanged) and an older E2E TEST message is readable. Logout clears localStorage; logging back in restores from the v2 backup and the message is still readable. parseItem: 'dischi di riso 30g' -> 'dischi di riso'/30, 'Diet coke 330ml' -> 'Diet coke'/330, '100g d’orzo' -> 'orzo'/100, checked in the UI edit sheet and in a node unit check. ConsentGate: a TEST user missing health_data sees the gate on /, /chat/:id, /nutrition/:id, /measurements/:id and /notifications; after accepting, the chat screen renders.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_silverpt_v12_keybackup_consent.py",
+    "/app/backend/tests/check_marco_backup.py",
+    "/app/backend/tests/post_marco_e2e_msg.py",
+    "/app/backend/tests/v12_test_users.py",
+    "/app/tests/parseitem_v12.test.js",
+    "/app/test_reports/pytest/pytest_v12.xml"
+  ],
+  "action_items": [
+    "LOW (robustness): myKeys() has no in-flight dedup. signIn starts myKeys without awaiting it. If the chat screen calls myKeys before the first call finishes (for example, a very fast navigation right after login), two calls can run at once. For a brand-new user, both could generate different key pairs and both PUT them, so the local key and the server key could differ. Not reproduced: an immediate hub-chat-button tap after login gave matching keys. Suggest caching the pending promise per uid in e2e.ts."
+  ],
+  "critical_code_review_comments": [
+    "e2e.ts:66 sets serverPk = null whenever `legacy` is set, so every fresh-device login re-PUTs the backup, even when the v2 unwrap worked. This is harmless (same pk) but adds an extra write.",
+    "e2e.ts: myKeys is not reentrant (see action item). pendingSecret is consumed synchronously by the first call, so a concurrent second call may see no wrap key yet and return null (fallback banner until the screen is reopened)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (29/29 executed, 1 skipped: chat keys for a client without a chat subscription)", "frontend": "100% (6/6 requested flows)"},
+  "seed_data_creation": "Created 3 TEST_V12UI clients, 1 nutrition plan, 1 TEST E2E chat message from Marco plus its notification, and 1 pytest TEST user. All were deleted by id. Side effect, as the feature intends: Marco's key_backup was migrated from v1 to v2 by the app; his public_key is unchanged.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run: cd /app/backend && export EXPO_PUBLIC_BACKEND_URL=$(grep EXPO_PUBLIC_BACKEND_URL /app/frontend/.env | cut -d= -f2) && set -a && . ./.env && set +a && pytest tests/test_silverpt_v12_keybackup_consent.py -n 0. Marco's backup is now v2: python3 tests/check_marco_backup.py checks it. tests/post_marco_e2e_msg.py posts an E2E message to Marco's own key (delete it by id afterwards). tests/v12_test_users.py create N [missing_consent] / delete <ids> manages TEST clients that have chat enabled. The client's food diary with plan items is at /feed (tab). /nutrition/:id is read-only, and clients need visibility.nutrition=true to see the plan."
+}

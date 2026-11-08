@@ -10,6 +10,7 @@ import { ClientHub } from "@/src/client-hub";
 import { Renewals } from "@/src/renewals";
 import { useTheme } from "@/src/theme";
 import { COIN } from "@/src/flip-logo";
+import { DashTiles, useDashboard } from "@/src/dashboard";
 import { daysTo } from "@/app/(tabs)/profile";
 
 export function Countdown({ profile }: { profile?: any }) {
@@ -68,6 +69,8 @@ function TrainerHome() {
   const { colors } = useTheme();
   const { data, loading, error, reload } = useFetch<any[]>("/clients");
   const [add, setAdd] = useState(false);
+  const dash = useDashboard();
+  useFocusEffect(useCallback(() => { dash.reload(); }, [])); // eslint-disable-line react-hooks/exhaustive-deps
   const questions = useFetch<any[]>(user?.role === "trainer" ? "/questions" : null);
   const unread = useFetch<Record<string, number>>(user?.role === "trainer" ? "/chat-unread" : null);
   const openQ = (questions.data || []).filter((x) => x.status === "open").length;
@@ -79,7 +82,7 @@ function TrainerHome() {
         <Card accent testID="invite-code-card">
           <T muted style={{ fontSize: 12, fontWeight: "700", letterSpacing: 1 }}>CODICE INVITO CLIENTI E NUTRIZIONISTI</T>
           <T testID="invite-code-text" style={{ fontSize: 32, fontWeight: "900", letterSpacing: 6, color: colors.brandPrimary }}>{user?.invite_code}</T>
-          <T muted>Condividilo: i clienti lo inseriscono alla registrazione.</T>
+          <T muted>Il codice cambia ogni giorno: condividi quello di oggi con i nuovi clienti.</T>
         </Card>
       ) : (
         <Card accent testID="nutri-info-card">
@@ -93,6 +96,7 @@ function TrainerHome() {
         </Card>
       )}
       <AddClientSheet visible={add} onClose={() => setAdd(false)} onDone={(id) => { setAdd(false); reload(); router.push(`/client/${id}`); }} />
+      <DashTiles d={dash.data} nutri={user?.role === "nutritionist"} />
       <Field testID="clients-search-input" placeholder="Cerca cliente..." value={q} onChangeText={setQ} />
       {user?.role === "trainer" ? (
         <View style={{ flexDirection: "row", gap: 8 }}>
@@ -102,7 +106,6 @@ function TrainerHome() {
         </View>
       ) : null}
       {user?.role === "trainer" ? <Btn testID="copilot-button" variant="ghost" icon="sparkles" title="Copilot AI" onPress={() => router.push("/copilot")} /> : null}
-      {user?.role === "trainer" && data ? <Renewals clients={data} /> : null}
       <H>{`Clienti (${data?.length ?? 0})`}</H>
       {loading && !data ? <Loading /> : null}
       <ErrorText text={error} />

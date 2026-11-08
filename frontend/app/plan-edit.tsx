@@ -8,6 +8,7 @@ import { useTheme } from "@/src/theme";
 import { AiPlanSheet, DISTRICTS, PROTOCOLS, TECHNIQUES, applyProtocol, findMax } from "@/src/plan-tools";
 import { ExerciseImages, ExercisePicker } from "@/src/exercises";
 import { ClientReminder } from "@/src/client-reminder";
+import { Select } from "@/src/select";
 
 const newEx = () => ({ name: "", sets: "3", reps: "10", load: "", rir: "2", rest: "90s", notes: "", type: "reps", technique: "", images: [] as string[], district: "" });
 const APPROACHES = ["Ipertrofia", "Forza", "Ricomposizione", "Dimagrimento", "Powerbuilding", "Contest prep", "Ricondizionamento"];
@@ -24,14 +25,17 @@ function VolumeCard({ plan, upd, clientId }: { plan: any; upd: (fn: (p: any) => 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const v = plan.volume || { weekly_total: "", per_district: {} };
+  const mode = v.mode || "district";
   const planned = plannedVolume(plan);
   const plannedTot = Object.values(planned).reduce((a, b) => a + b, 0);
+  const setV = (patch: any) => upd((p) => { p.volume = { ...(p.volume || {}), ...patch }; });
   const askAi = async () => {
     setBusy(true);
     setErr("");
     try {
-      const r = await api("/ai/volume", { method: "POST", body: { client_id: clientId, goal: plan.approach, freq: String(plan.days.length), districts: DISTRICTS } });
-      upd((p) => { p.volume = { weekly_total: String(r.weekly_total ?? ""), per_district: Object.fromEntries(Object.entries(r.per_district || {}).map(([k, x]) => [k, String(x)])), ai: true, rationale: r.rationale || "" }; });
+      const given = mode === "total" ? { totale: v.weekly_total } : mode === "upperlower" ? { totale: v.weekly_total, upper: v.upper, lower: v.lower } : { totale: v.weekly_total, ...(v.per_district || {}) };
+      const r = await api("/ai/volume", { method: "POST", body: { client_id: clientId, goal: plan.approach, freq: String(plan.days.length), districts: DISTRICTS, given } });
+      setV({ weekly_total: String(r.weekly_total ?? v.weekly_total ?? ""), per_district: Object.fromEntries(Object.entries(r.per_district || {}).map(([k, x]) => [k, String(x)])), ai: true, rationale: r.rationale || "", mode: "district" });
     } catch (e: any) {
       setErr(e.message);
     } finally {
@@ -41,22 +45,35 @@ function VolumeCard({ plan, upd, clientId }: { plan: any; upd: (fn: (p: any) => 
   return (
     <Card accent testID="volume-card">
       <H>Volume settimanale (serie)</H>
-      <T muted style={{ fontSize: 12 }}>Scegli tu il totale e i volumi per distretto, oppure lascia decidere all&apos;AI. Il conteggio previsto usa il distretto assegnato a ogni esercizio.</T>
+      <T muted style={{ fontSize: 12 }}>Decidi quanto vuoi: solo il totale, upper/lower o ogni distretto. L&apos;AI completa e suddivide il resto.</T>
+      <ChipRow>
+        {[["total", "Solo totale"], ["upperlower", "Upper / Lower"], ["district", "Per distretto"]].map(([k, l]) => (
+          <Chip key={k} testID={`volume-mode-${k}`} label={l} active={mode === k} onPress={() => setV({ mode: k })} />
+        ))}
+      </ChipRow>
       <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>
-        <Field testID="volume-total-input" label="Totale settimanale" keyboardType="number-pad" value={String(v.weekly_total ?? "")} onChangeText={(x) => upd((p) => { p.volume = { ...v, weekly_total: x, ai: false }; })} style={{ flex: 1 }} />
+        <Field testID="volume-total-input" label="Totale settimanale" keyboardType="number-pad" value={String(v.weekly_total ?? "")} onChangeText={(x) => setV({ weekly_total: x, ai: false })} style={{ flex: 1 }} />
         <View style={{ flex: 1, paddingBottom: 12 }}><T muted style={{ fontSize: 12 }}>Previsto in scheda</T><T style={{ fontWeight: "900", color: v.weekly_total && plannedTot > num(v.weekly_total) ? colors.warning : colors.onSurface }}>{plannedTot} serie</T></View>
       </View>
+      {mode === "upperlower" ? (
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Field testID="volume-upper" label="Upper" keyboardType="number-pad" value={String(v.upper ?? "")} onChangeText={(x) => setV({ upper: x })} style={{ flex: 1 }} />
+          <Field testID="volume-lower" label="Lower" keyboardType="number-pad" value={String(v.lower ?? "")} onChangeText={(x) => setV({ lower: x })} style={{ flex: 1 }} />
+        </View>
+      ) : null}
+      {mode === "district" ? (
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         {DISTRICTS.map((d) => (
           <View key={d} style={{ width: "31%", flexGrow: 1 }}>
             <Field testID={`volume-${d}`} label={`${d}${planned[d] ? ` (${planned[d]})` : ""}`} keyboardType="number-pad" value={String(v.per_district?.[d] ?? "")}
-              onChangeText={(x) => upd((p) => { p.volume = { ...v, ai: false, per_district: { ...(v.per_district || {}), [d]: x } }; })} />
+              onChangeText={(x) => setV({ ai: false, per_district: { ...(v.per_district || {}), [d]: x } })} />
           </View>
         ))}
       </View>
+      ) : null}
       {v.ai && v.rationale ? <T muted style={{ fontSize: 12 }}>AI: {v.rationale}</T> : null}
       <ErrorText text={err} />
-      <Btn testID="volume-ai-button" small variant="ghost" icon="sparkles" title="Decide l'AI" loading={busy} onPress={askAi} />
+      <Btn testID="volume-ai-button" small variant="ghost" icon="sparkles" title={mode === "district" ? "Completa con AI" : "Suddividi con AI"} loading={busy} onPress={askAi} />
     </Card>
   );
 }
@@ -108,10 +125,7 @@ export default function PlanEdit() {
       <AiPlanSheet visible={aiOpen} onClose={() => setAiOpen(false)} clientId={clientId} volume={plan.volume} onPlan={(g) => setPlan((p: any) => ({ ...p, name: p.name || g.name || "", approach: g.approach || p.approach, notes: g.notes || p.notes, days: g.days?.length ? g.days : p.days }))} />
       <Field testID="plan-name-input" label="Nome scheda" placeholder="es. Ipertrofia - Blocco 1" value={plan.name} onChangeText={(v) => upd((p) => { p.name = v; })} />
       <Field testID="plan-notes-input" label="Note" multiline value={plan.notes} onChangeText={(v) => upd((p) => { p.notes = v; })} />
-      <T muted>Approccio</T>
-      <ChipRow>
-        {APPROACHES.map((a) => <Chip key={a} testID={`approach-chip-${a}`} label={a} active={plan.approach === a} onPress={() => upd((p) => { p.approach = p.approach === a ? "" : a; })} />)}
-      </ChipRow>
+      <Select testID="approach-select" label="Approccio" value={plan.approach || ""} options={APPROACHES} onChange={(v) => upd((p) => { p.approach = v; })} />
       <Field testID="plan-approach-input" placeholder="Oppure scrivi l'approccio (es. DUP, 5/3/1)" value={plan.approach || ""} onChangeText={(v) => upd((p) => { p.approach = v; })} />
       <VolumeCard plan={plan} upd={upd} clientId={clientId} />
       <Toggle testID="plan-active-toggle" label="Scheda attiva" hint="Se disattivata resta nello storico ma il cliente non la vede in Home" value={plan.active !== false} onChange={(v) => upd((p) => { p.active = v; })} />
@@ -152,12 +166,10 @@ export default function PlanEdit() {
                       <Btn testID={`ex-images-${di}-${ei}`} small variant="dark" icon="images" title={e.images?.length ? "Cambia immagini" : "Aggiungi immagini"} style={{ flex: 1 }} onPress={() => setPick({ di, ei })} />
                       {e.images?.length ? <Btn small variant="ghost" icon="close" title="Rimuovi" onPress={() => f("images")([])} /> : null}
                     </View>
-                    <T muted style={{ fontSize: 11, fontWeight: "700" }}>DISTRETTO</T>
-                    <ChipRow>{DISTRICTS.map((x) => <Chip key={x} testID={`ex-district-${di}-${ei}-${x}`} label={x} active={e.district === x} onPress={() => f("district")(e.district === x ? "" : x)} />)}</ChipRow>
-                    <ChipRow>
-                      <Chip testID={`ex-type-reps-${di}-${ei}`} label="Ripetizioni" active={e.type !== "time"} onPress={() => f("type")("reps")} />
-                      <Chip testID={`ex-type-time-${di}-${ei}`} label="A tempo (sec)" active={e.type === "time"} onPress={() => f("type")("time")} />
-                    </ChipRow>
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <Select testID={`ex-district-${di}-${ei}`} label="Distretto" value={e.district} options={DISTRICTS} onChange={f("district")} />
+                      <Select testID={`ex-type-${di}-${ei}`} label="Tipo" value={e.type === "time" ? "A tempo (sec)" : "Ripetizioni"} options={["Ripetizioni", "A tempo (sec)"]} allowClear={false} onChange={(v) => f("type")(v === "Ripetizioni" ? "reps" : "time")} />
+                    </View>
                     {e.scheme?.length ? (
                       <View style={{ gap: 4 }} testID={`ex-scheme-${di}-${ei}`}>
                         <T style={{ fontWeight: "800", fontSize: 13, color: colors.brandPrimary }}>{e.protocol}</T>
@@ -178,21 +190,13 @@ export default function PlanEdit() {
                       <Field testID={`ex-rest-${di}-${ei}`} label="Recupero" value={e.rest} onChangeText={f("rest")} style={{ width: 100 }} />
                       <Field testID={`ex-notes-${di}-${ei}`} label="Note tecniche" value={e.notes} onChangeText={f("notes")} style={{ flex: 1 }} />
                     </View>
-                    <T muted style={{ fontSize: 11, fontWeight: "700" }}>TECNICA DI INTENSITÀ</T>
-                    <ChipRow>
-                      {TECHNIQUES.map((t) => <Chip key={t} testID={`ex-tech-${di}-${ei}-${t}`} label={t} active={e.technique === t} onPress={() => f("technique")(e.technique === t ? "" : t)} />)}
-                    </ChipRow>
-                    {e.type !== "time" ? (
-                      <>
-                        <T muted style={{ fontSize: 11, fontWeight: "700" }}>PROTOCOLLO ISSA{findMax(maxes, e.name) ? ` · 1RM stimato ${findMax(maxes, e.name)} kg` : " · carichi in %1RM"}</T>
-                        <ChipRow>
-                          {PROTOCOLS.map((pr) => (
-                            <Chip key={pr.name} testID={`ex-proto-${di}-${ei}-${pr.name}`} label={pr.name} active={e.protocol === pr.name}
-                              onPress={() => upd((p) => { p.days[di].exercises[ei] = applyProtocol(p.days[di].exercises[ei], pr.name, findMax(maxes, e.name)); })} />
-                          ))}
-                        </ChipRow>
-                      </>
-                    ) : null}
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <Select testID={`ex-tech-${di}-${ei}`} label="Tecnica di intensità" value={e.technique} options={TECHNIQUES} onChange={f("technique")} />
+                      {e.type !== "time" ? (
+                        <Select testID={`ex-proto-${di}-${ei}`} label={findMax(maxes, e.name) ? `Protocollo · 1RM ${findMax(maxes, e.name)}kg` : "Protocollo ISSA (%1RM)"} value={e.protocol} options={PROTOCOLS.map((x) => x.name)}
+                          onChange={(v) => upd((p) => { if (!v) { const x = p.days[di].exercises[ei]; delete x.scheme; x.protocol = ""; } else p.days[di].exercises[ei] = applyProtocol(p.days[di].exercises[ei], v, findMax(maxes, e.name)); })} />
+                      ) : null}
+                    </View>
                   </View>
                 )}
               </Card>

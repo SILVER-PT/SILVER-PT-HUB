@@ -33,7 +33,7 @@ export function applyProtocol(ex: any, protoName: string, oneRm: number) {
   return { ...ex, protocol: p.name, scheme, sets: String(scheme.length), reps: scheme[0].reps, load: scheme[0].load, rir: p.rir || ex.rir, rest: p.rest || ex.rest, technique: p.technique || ex.technique || "" };
 }
 
-export const DISTRICTS = ["Petto", "Dorso", "Spalle", "Bicipiti", "Tricipiti", "Quadricipiti", "Femorali", "Glutei", "Polpacci", "Addome"];
+export const DISTRICTS = ["Petto", "Dorso", "Spalle", "Bicipiti", "Tricipiti", "Quadricipiti", "Femorali", "Glutei", "Polpacci", "Addome", "Avambracci", "Adduttori"];
 
 const OPT = {
   goal: ["Ipertrofia", "Forza", "Ricomposizione", "Dimagrimento", "Contest prep", "Ricondizionamento"],

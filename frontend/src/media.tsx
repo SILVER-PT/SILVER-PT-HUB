@@ -2,13 +2,18 @@ import React, { useRef, useState } from "react";
 import { Linking, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Btn, Sheet, T } from "@/src/ui";
+import { useAuth } from "@/src/auth";
+import { api } from "@/src/api";
+
+const UPLOAD_PRIVACY = "I file che carichi (foto check, posing, video, foto dei pasti, etichette, referti e analisi, foto profilo) viaggiano su connessione cifrata e sono conservati in un archivio privato, visibile solo a te e ai professionisti che hai scelto (art. 13 e 9 GDPR). Referti e analisi sono dati sanitari: carica solo documenti che ti riguardano. Foto di pasti, etichette e referti possono essere elaborate dall'intelligenza artificiale solo per estrarre i valori richiesti. Puoi eliminare i tuoi file quando vuoi e revocare il consenso dal Profilo → Privacy e documenti.";
 
 type Kind = "images" | "videos";
 type Opts = { base64?: boolean };
 
 // Contextual camera permission flow + gallery picker. Returns pick() and a sheet to render.
 export function useMediaPicker() {
-  const [sheet, setSheet] = useState<null | "explain" | "settings" | "choose">(null);
+  const [sheet, setSheet] = useState<null | "explain" | "settings" | "choose" | "privacy">(null);
+  const { user, refresh } = useAuth();
   const pending = useRef<{ kind: Kind; opts: Opts; resolve: (a: ImagePicker.ImagePickerAsset | null) => void } | null>(null);
 
   const finish = (a: ImagePicker.ImagePickerAsset | null) => {
@@ -40,11 +45,25 @@ export function useMediaPicker() {
   const pick = (kind: Kind, opts: Opts = {}) =>
     new Promise<ImagePicker.ImagePickerAsset | null>((resolve) => {
       pending.current = { kind, opts, resolve };
-      setSheet("choose");
+      const ok = (user?.consents || []).some((c: any) => c.id === "upload_media");
+      setSheet(ok ? "choose" : "privacy");
     });
+
+  const acceptPrivacy = async () => {
+    try {
+      await api("/me/consents", { method: "POST", body: { id: "upload_media", accepted: true } });
+      await refresh();
+    } catch {}
+    setSheet("choose");
+  };
 
   const element = (
     <>
+      <Sheet visible={sheet === "privacy"} onClose={() => finish(null)} title="Informativa caricamento file">
+        <T testID="upload-privacy-text" style={{ fontSize: 13 }}>{UPLOAD_PRIVACY}</T>
+        <Btn testID="upload-privacy-accept" icon="shield-checkmark" title="Ho letto e acconsento" onPress={acceptPrivacy} />
+        <Btn variant="ghost" title="Annulla" onPress={() => finish(null)} />
+      </Sheet>
       <Sheet visible={sheet === "choose"} onClose={() => finish(null)} title="Scegli sorgente">
         <Btn testID="picker-camera-button" icon="camera" title={pending.current?.kind === "videos" ? "Registra video" : "Scatta foto"} onPress={camera} />
         <Btn testID="picker-library-button" icon="images" variant="dark" title="Dalla galleria" onPress={() => launch("library")} />

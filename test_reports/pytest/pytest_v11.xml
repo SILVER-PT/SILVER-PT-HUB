@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="22" time="8.255" timestamp="2026-11-08T19:47:28.039423+00:00" hostname="agent-env-36692c39-c7d9-4828-85d4-77b4663f92bb"><testcase classname="tests.test_silverpt_v10_fixes.TestDashboardFinance" name="test_nutri_finance_zero" time="2.131" /><testcase classname="tests.test_silverpt_v10_fixes.TestDashboardFinance" name="test_trainer_finance_counts_marco" time="0.139" /><testcase classname="tests.test_silverpt_v10_fixes.TestDashboardFinance" name="test_nutri_finance_counts_own_package" time="0.144" /><testcase classname="tests.test_silverpt_v10_fixes.TestAdvice" name="test_numeric_advice_rejected[1 kg di pasta]" time="0.262" /><testcase classname="tests.test_silverpt_v10_fixes.TestAdvice" name="test_numeric_advice_rejected[30% proteine]" time="0.168" /><testcase classname="tests.test_silverpt_v10_fixes.TestAdvice" name="test_numeric_advice_rejected[Bilancia i macro]" time="0.180" /><testcase classname="tests.test_silverpt_v10_fixes.TestAdvice" name="test_numeric_advice_rejected[200 ml di latte]" time="0.159" /><testcase classname="tests.test_silverpt_v10_fixes.TestAdvice" name="test_numeric_advice_rejected[Mangia 100 g di riso]" time="0.155" /><testcase classname="tests.test_silverpt_v10_fixes.TestAdvice" name="test_numeric_advice_rejected[1500 kcal al giorno]" time="0.142" /><testcase classname="tests.test_silverpt_v10_fixes.TestAdvice" name="test_generic_advice_ok" time="0.299" /><testcase classname="tests.test_silverpt_v10_fixes.TestDailyCode" name="test_code_matches_rome_day" time="0.479" /><testcase classname="tests.test_silverpt_v10_fixes.TestKeyBackup" name="test_put_and_get_backup" time="0.296" /><testcase classname="tests.test_silverpt_v10_fixes.TestKeyBackup" name="test_put_without_backup_keeps_old" time="0.294" /><testcase classname="tests.test_silverpt_v10_fixes.TestKeyBackup" name="test_backup_requires_auth" time="0.129" /><testcase classname="tests.test_silverpt_v10_fixes.TestKeyBackup" name="test_backup_too_long_rejected" time="0.152" /><testcase classname="tests.test_silverpt_v11_e2e_keys_plan.TestPublicKey" name="test_put_without_backup_422" time="1.577" /><testcase classname="tests.test_silverpt_v11_e2e_keys_plan.TestPublicKey" name="test_put_with_backup_persists" time="0.446" /><testcase classname="tests.test_silverpt_v11_e2e_keys_plan.TestPublicKey" name="test_empty_backup_422" time="0.143" /><testcase classname="tests.test_silverpt_v11_e2e_keys_plan.TestPublicKey" name="test_auth_me_exposes_own_pk" time="0.141" /><testcase classname="tests.test_silverpt_v11_e2e_keys_plan.TestPublicKey" name="test_staff_cannot_see_client_key_backup" time="0.137"><failure message="AssertionError: key_backup leaked in /clients/{id}&#10;assert 'TESTcipher5678' not in '{&quot;id&quot;:&quot;6af0...BBBBBBBBB=&quot;}'&#10;  &#10;  'TESTcipher5678' is contained here:&#10;    nonce1234.TESTcipher5678&quot;,&quot;public_key&quot;:&quot;BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=&quot;}&#10;  ?           ++++++++++++++">self = &lt;test_silverpt_v11_e2e_keys_plan.TestPublicKey object at 0xfbc313fbdd50&gt;
+ctx = {'nh': {'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2YWU3NDQ4ZTY1NzEzMTRiNjU4MjQxNmQiLCJy...YmUiLCJyb2xlIjoiY2xpZW50IiwiaWF0IjoxNzk0MTY3MjU0LCJleHAiOjE3OTY3NTkyNTR9.WJ5EhkgDsb7RSGb7d6Y8cjFh_dZ1MmuzosbWm1LPw7k'}}
+
+    def test_staff_cannot_see_client_key_backup(self, ctx):
+        # nutritionist views the client -&gt; backup (encrypted secret key) should not be exposed to others
+        r = requests.get(f"{API}/clients/{ctx['cid']}", headers=ctx["nh"])
+        assert r.status_code == 200, r.text
+        body = r.text
+&gt;       assert "TESTcipher5678" not in body, "key_backup leaked in /clients/{id}"
+E       AssertionError: key_backup leaked in /clients/{id}
+E       assert 'TESTcipher5678' not in '{"id":"6af0...BBBBBBBBB="}'
+E         
+E         'TESTcipher5678' is contained here:
+E           nonce1234.TESTcipher5678","public_key":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="}
+E         ?           ++++++++++++++
+
+tests/test_silverpt_v11_e2e_keys_plan.py:65: AssertionError</failure></testcase><testcase classname="tests.test_silverpt_v11_e2e_keys_plan.TestPublicKey" name="test_staff_clients_list_no_backup" time="0.162"><failure message="AssertionError: key_backup leaked in /clients&#10;assert 'TESTcipher5678' not in '[{&quot;id&quot;:&quot;6ae...BBBBBBBB=&quot;}]'&#10;  &#10;  'TESTcipher5678' is contained here:&#10;    nonce1234.TESTcipher5678&quot;,&quot;public_key&quot;:&quot;BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=&quot;}]&#10;  ?           ++++++++++++++">self = &lt;test_silverpt_v11_e2e_keys_plan.TestPublicKey object at 0xfbc313fbe4d0&gt;
+ctx = {'nh': {'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2YWU3NDQ4ZTY1NzEzMTRiNjU4MjQxNmQiLCJy...YmUiLCJyb2xlIjoiY2xpZW50IiwiaWF0IjoxNzk0MTY3MjU0LCJleHAiOjE3OTY3NTkyNTR9.WJ5EhkgDsb7RSGb7d6Y8cjFh_dZ1MmuzosbWm1LPw7k'}}
+
+    def test_staff_clients_list_no_backup(self, ctx):
+        r = requests.get(f"{API}/clients", headers=ctx["nh"])
+        assert r.status_code == 200
+&gt;       assert "TESTcipher5678" not in r.text, "key_backup leaked in /clients"
+E       AssertionError: key_backup leaked in /clients
+E       assert 'TESTcipher5678' not in '[{"id":"6ae...BBBBBBBB="}]'
+E         
+E         'TESTcipher5678' is contained here:
+E           nonce1234.TESTcipher5678","public_key":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="}]
+E         ?           ++++++++++++++
+
+tests/test_silverpt_v11_e2e_keys_plan.py:70: AssertionError</failure></testcase><testcase classname="tests.test_silverpt_v11_e2e_keys_plan.TestPlanItems" name="test_hide_numbers_item_format" time="0.331" /></testsuite></testsuites>

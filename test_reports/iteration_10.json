@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 10 retest of the v9 fixes. Backend: 15/15 new pytest cases pass (tests/test_silverpt_v10_fixes.py) and the v9 regression still passes 20/20. Covered: nutritionist dashboard finance is 0 and counts only the nutritionist's own packages (a temporary TEST package gives 120/yr -> 10/month); trainer finance unchanged; advice regex rejects '1 kg di pasta', '30% proteine', 'macro', ml, g and kcal and still accepts generic advice; daily_code matches the Europe/Rome day; PUT /me/public-key with key_backup and GET /me/key-backup. Frontend (390x844), 7/8 flows pass: ConsentGate shows for cliente@ (5 docs), trainer@ (terms/privacy/professional) and nutri@, and 'Seleziona tutti' + 'Accetto e continuo' unlocks the app. /feed shows flip-logo-nutrition. On Profile, tapping the coin keeps the photo side (flip-logo-back opacity 1). Plan item '80g avena': confirm with no known values opens the form (avena/80); edit opens the form and closing it keeps the item; saving hides it; the item stays hidden after reload; confirm with known values auto-logs 300 kcal (scaled from per100); remove persists after reload and the next day shows the item again. Finance tile and page both show 60€ (trainer) and 0€ (nutri). The district Select includes Avambracci and Adduttori. E2E key backup works ONLY when the chat is opened in the same JS session as the login. After a page reload (or app restart) the passphrase is lost: a new key pair is generated, the public key is overwritten without a backup, and the second browser could not decrypt (reproduced). Deprecated packages: none found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/me/public-key", "issue": "When key_backup is omitted, public_key is updated but the old key_backup is kept, so the server can hold {pk_new, backup(sk_old)}. A new device then restores sk_old paired with pk_new (GET /me/key-backup returns the current public_key, not the one in the backup): a broken key pair that cannot decrypt anything. Verified by test_put_without_backup_keeps_old."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "parseItem in src/nutrition.tsx:132", "issue": "The leading-strip regex /^[\\s\\-di]+/ removes any leading 'd' or 'i' characters, not the word 'di'. Verified with node: '100g di insalata' -> 'nsalata', 'insalata 100g' -> 'nsalata', \"100g d'orzo\" -> \"'orzo\". Only '80g avena' works by luck. Use something like .replace(/^\\s*(di\\s+|d')/i, '').", "testID": "plan-item-confirm-0 / plan-item-edit-0", "priority": "MEDIUM"},
+      {"component": "planItems in src/nutrition.tsx:128", "issue": "find(meal includes 'colazione') returns only the first match, so the 'Seconda colazione' items (e.g. 'Latte 200ml' in Marco's plan) are never shown. 'items.split(/\\n|;|,/)' also breaks decimals like '1,5 kg'.", "testID": "plan-items-card", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "E2E key backup / multi-device (src/e2e.ts)", "issue": "The passphrase is only in memory (setPassphrase at login). Reproduced: login -> page reload -> open chat with no local key -> myKeys creates a NEW key pair and PUTs public_key with no backup (DB had key_backup=None, pk overwritten). The second browser then got a different pk and could not decrypt the message. In-app navigation login -> hub-chat-button works: same pk restored and message decrypted in the 2nd context. On native, an app restart with a persisted token has the same problem. Old messages become unreadable whenever this happens.", "affected_testIDs": ["hub-chat-button", "chat-input", "chat-send-button", "chat-e2e-banner"]},
+      {"flow": "Plan item dismiss state", "issue": "The dismiss state is stored per device (AsyncStorage). In a fresh browser, '80g avena' showed again even though it was already logged that day, and confirming it created a duplicate meal (observed). Derive the hidden state from meals already logged for that date/meal (name match) as well as AsyncStorage.", "affected_testIDs": ["plan-items-card", "plan-item-confirm-0"]}
+    ],
+    "design_issues": [
+      {"screen": "ConsentGate", "issues": ["'Accetto e continuo' is aria-disabled until all docs are ticked, but it looks almost as bright as the enabled red button. Make the disabled state clearly visible.", "Only (tabs)/_layout is wrapped, so stack routes (/chat/*, /nutrition-plan/*, /plan-edit, /finance) opened by deep link or reload skip the gate. Also, while /legal/docs loads (or if it fails) the children are rendered, so the gate can be bypassed."]},
+      {"screen": "Nutritionist /finance", "issues": ["The header coin shows the Training logo on the nutritionist's Finance page (not in NUTRI_ROUTES). Consider using the Nutrition logo for every nutritionist page."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_silverpt_v10_fixes.py", "/app/backend/tests/test_silverpt_v9_legal_crypto_dashboard.py", "/app/test_reports/pytest/pytest_v10.xml"],
+  "action_items": [
+    "HIGH: Make E2E key restore survive reloads and restarts. Options: (a) at login, store the derived wrap key (not the password) in SecureStore/AsyncStorage next to the token; (b) when there is no local key and no passphrase, ask for the password instead of silently generating a new pair; (c) never overwrite public_key without a matching key_backup. Store pk inside the backup, or derive it with nacl.box.keyPair.fromSecretKey(sk), so a mismatched pair can't be restored.",
+    "Security note: the wrap key is SHA-512(email:password), and the server receives the plaintext password at login, so it can derive the wrap key and decrypt key_backup. Use a slow KDF with a salt, or a separate chat PIN, if true E2E against the server matters.",
+    "Fix parseItem's leading-'di' regex in src/nutrition.tsx:132 ('100g di insalata' -> 'nsalata').",
+    "Hide plan items that already match a meal logged that day, to avoid duplicates across devices.",
+    "Support multiple meal_plan entries matching a meal (Seconda colazione), and don't split on ',' inside decimals.",
+    "ConsentGate: also gate stack routes (wrap the root layout), and don't render children while /legal/docs is loading or has failed."
+  ],
+  "critical_code_review_comments": [
+    "server.py PUT /me/public-key: updating public_key without key_backup leaves a stale backup (see backend minor).",
+    "e2e.ts myKeys: the 'fresh' variable is unused (void fresh). If unwrap fails (e.g. after a password change), a new key is generated silently and history is lost without warning.",
+    "consent-gate.tsx: version comparison is fine; failed POSTs show ErrorText. OK.",
+    "flip-logo.tsx: works on /profile because the header remounts per screen. If headers ever persist across tabs, rot won't update when the path changes. Consider a useEffect on onProfile.",
+    "extra.py dashboard: the nutritionist scoping is correct. Trainer own_pkgs=None counts every subscription of its clients, including ones on a nutritionist-owned package, if that case ever exists."
+  ],
+  "updated_files": ["/app/backend/tests/test_silverpt_v10_fixes.py"],
+  "success_rate": {"backend": "100% (15/15 new + 20/20 v9 regression)", "frontend": "87% (7/8 requested flows; E2E backup fails after reload)"},
+  "seed_data_creation": "Temporary TEST_V10 client (registered with the nutri code) and a TEST_V10 package, both deleted. Two 'avena' meals for Marco and two TEST_V10 E2E chat messages plus notifications, all deleted by id. Consents accepted via the gate for cliente@, trainer@ and nutri@ (left accepted, as allowed). cliente@ public_key changed (new pair b3e9... with a valid backup). Marco's nutrition plan was not modified.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && export EXPO_PUBLIC_BACKEND_URL=$(grep EXPO_PUBLIC_BACKEND_URL /app/frontend/.env | cut -d= -f2) && set -a && . ./.env && set +a && pytest tests/test_silverpt_v10_fixes.py -n 0. For E2E backup UI tests, use fresh contexts and in-app navigation (login -> hub-chat-button). Also test the reload case (page.goto after login) to check the fix. All 3 test accounts now have their consents accepted, so the ConsentGate won't show for them; use a TEST user with the consents removed in Mongo to retest it. Plan dismiss state is in localStorage under diary_dismissed_<clientId>.",
+  "rca_of_issue": "E2E backup failure: setPassphrase() keeps the passphrase in a module variable only. A web reload or app restart clears it while the auth token survives. myKeys() then finds no local key and no passphrase, skips the restore, generates a new nacl pair and PUTs public_key without key_backup (Mongo: key_backup None, pk replaced). Repro: in a fresh browser, log in as cliente@ -> page.goto('/chat/<MARCO>') -> send a message -> in a 2nd fresh browser, log in and open the chat -> different pk, message not decrypted. Mitigation: persist the derived wrap key securely at login, or ask for the password when a restore is needed, and never publish a pk that has no matching backup."
+}

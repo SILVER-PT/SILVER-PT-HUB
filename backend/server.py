@@ -44,19 +44,87 @@ def now_iso():
 
 
 def ser(doc: Optional[dict]) -> Optional[dict]:
-    """Mongo document -> JSON-safe dict with `id`."""
+    """Mongo document -> JSON-safe dict with `id`. Sealed (encrypted) fields are transparently opened."""
     if doc is None:
         return None
     out = {}
     for k, v in doc.items():
         if k == "_id":
             out["id"] = str(v)
-        elif k == "password_hash":
+        elif k in ("password_hash", "_sealed", "key_backup"):
             continue
         elif isinstance(v, ObjectId):
             out[k] = str(v)
+        elif k == "profile" and isinstance(v, dict) and "_sealed" in v:
+            out[k] = {**{x: y for x, y in v.items() if x != "_sealed"}, **unseal(v["_sealed"])}
         else:
             out[k] = v
+    if "_sealed" in doc:
+        out.update(unseal(doc["_sealed"]))
+    if doc.get("role") in ("trainer", "nutritionist") and "_id" in doc:
+        out["invite_code"] = daily_code(str(doc["_id"]))
+    return out
+
+
+# ---------- encryption at rest (AES-256-GCM) ----------
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: E402
+import base64, hmac, hashlib  # noqa: E402
+
+_AES = AESGCM(base64.b64decode(os.environ["DATA_KEY"]))
+
+
+def seal(obj: Any) -> str:
+    nonce = os.urandom(12)
+    return "v1:" + base64.b64encode(nonce + _AES.encrypt(nonce, json.dumps(obj).encode(), None)).decode()
+
+
+def unseal(s: Optional[str]) -> Any:
+    if not s:
+        return {}
+    try:
+        raw = base64.b64decode(s[3:])
+        return json.loads(_AES.decrypt(raw[:12], raw[12:], None))
+    except Exception:
+        logger.error("unseal failed")
+        return {}
+
+
+SENSITIVE_PROFILE = ("anamnesis", "health", "injuries")
+
+
+def seal_profile(p: dict) -> dict:
+    p = dict(p or {})
+    if "_sealed" in p:
+        p.update(unseal(p.pop("_sealed")))
+    secret = {k: p.pop(k) for k in SENSITIVE_PROFILE if k in p}
+    return {**p, "_sealed": seal(secret)} if secret else p
+
+
+def daily_code(uid: str, day: Optional[str] = None) -> str:
+    """Invite code that rotates every day (Italian local date)."""
+    from zoneinfo import ZoneInfo
+    d = day or datetime.now(ZoneInfo("Europe/Rome")).strftime("%Y-%m-%d")
+    return hmac.new(JWT_SECRET.encode(), f"{uid}:{d}".encode(), hashlib.sha256).hexdigest()[:6].upper()
+
+
+async def find_inviter(code: str, roles=("trainer", "nutritionist")) -> Optional[dict]:
+    if not code:
+        return None
+    async for u in db.users.find({"role": {"$in": list(roles)}}):
+        if daily_code(str(u["_id"])) == code:
+            return u
+    return None
+
+
+def client_view(c: dict, viewer: dict) -> dict:
+    """Hide anamnesis/health from staff the client chose not to share with."""
+    out = ser(c)
+    role = viewer["role"]
+    if role in ("trainer", "nutritionist") and str(viewer["_id"]) != out["id"]:
+        share = (out.get("profile") or {}).get("share") or {}
+        if share.get(role) is False:
+            out["profile"] = {k: v for k, v in out["profile"].items() if k not in SENSITIVE_PROFILE}
+            out["profile"]["hidden_sensitive"] = True
     return out
 
 
@@ -115,7 +183,12 @@ async def user_from_token(token: str) -> dict:
 async def current_user(authorization: str = Header(None)) -> dict:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(401, "Non autenticato")
-    return await user_from_token(authorization.split(" ", 1)[1])
+    user = await user_from_token(authorization.split(" ", 1)[1])
+    now = datetime.now(timezone.utc)
+    last = user.get("last_seen")
+    if not last or (now - datetime.fromisoformat(last)).total_seconds() > 60:
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_seen": now.isoformat()}})
+    return user
 
 
 async def require_trainer(user=Depends(current_user)):
@@ -125,11 +198,13 @@ async def require_trainer(user=Depends(current_user)):
 
 
 async def assert_access(user: dict, client_id: str, allow_nutri: bool = False) -> dict:
-    """Trainer: own clients. Client: self. Nutritionist: assigned clients (only when allow_nutri)."""
+    """Trainer: own clients. Client: self. Nutritionist: assigned clients. Staff: also themselves (own workout/diet)."""
+    uid = str(user["_id"])
+    if uid == client_id:
+        return user
     c = await db.users.find_one({"_id": oid(client_id), "role": "client"})
     if not c:
         raise HTTPException(404, "Cliente non trovato")
-    uid = str(user["_id"])
     role = user["role"]
     ok = (role == "client" and uid == client_id) or (role == "trainer" and c.get("trainer_id") == uid) or \
          (role == "nutritionist" and c.get("nutritionist_id") == uid)
@@ -158,7 +233,7 @@ class RegisterIn(BaseModel):
     name: str
     role: str = "client"
     invite_code: Optional[str] = None
-
+    consents: List[str] = []
 
 class LoginIn(BaseModel):
     email: str
@@ -174,18 +249,23 @@ async def register(body: RegisterIn):
            "password_hash": bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode(),
            "created_at": now_iso()}
     code = (body.invite_code or "").strip().upper()
+    from legal import required_for, consent_records
+    missing = [d for d in required_for(body.role) if d not in body.consents]
+    if missing:
+        raise HTTPException(400, "Devi accettare tutti i documenti obbligatori per registrarti")
+    doc["consents"] = consent_records(body.consents)
     if body.role == "trainer":
-        doc["invite_code"] = pysecrets.token_hex(3).upper()
+        pass
     elif body.role == "nutritionist":
         # independent nutritionists may register without a coach code
-        trainer = await db.users.find_one({"role": "trainer", "invite_code": code}) if code else None
+        trainer = await find_inviter(code, ("trainer",))
         if code and not trainer:
-            raise HTTPException(400, "Codice invito non valido")
-        doc.update({"trainer_id": str(trainer["_id"]) if trainer else "", "profile": {}, "invite_code": pysecrets.token_hex(3).upper()})
+            raise HTTPException(400, "Codice invito non valido o scaduto (cambia ogni giorno)")
+        doc.update({"trainer_id": str(trainer["_id"]) if trainer else "", "profile": {}})
     elif body.role == "client":
-        inviter = await db.users.find_one({"role": {"$in": ["trainer", "nutritionist"]}, "invite_code": code}) if code else None
+        inviter = await find_inviter(code)
         if not inviter:
-            raise HTTPException(400, "Codice invito non valido")
+            raise HTTPException(400, "Codice invito non valido o scaduto (cambia ogni giorno)")
         if inviter["role"] == "trainer":
             doc["trainer_id"] = str(inviter["_id"])
         else:
@@ -221,7 +301,16 @@ class ProfileIn(BaseModel):
 @api.put("/clients/{client_id}/profile")
 async def update_profile(client_id: str, body: ProfileIn, user=Depends(current_user)):
     c = await assert_access(user, client_id)
-    upd = {"profile": body.profile}
+    upd = {"profile": seal_profile(body.profile)}
+    if user["role"] != "client" and str(user["_id"]) != client_id:
+        # staff never overwrite fields hidden from them, nor the client's sharing choices
+        cur = ser(c).get("profile") or {}
+        hidden = (cur.get("share") or {}).get(user["role"]) is False
+        merged = {**body.profile, "share": cur.get("share", {})}
+        if hidden:
+            merged.update({k: cur[k] for k in SENSITIVE_PROFILE if k in cur})
+        merged.pop("hidden_sensitive", None)
+        upd["profile"] = seal_profile(merged)
     if body.name:
         upd["name"] = body.name
     await db.users.update_one({"_id": oid(client_id)}, {"$set": upd})
@@ -234,12 +323,12 @@ async def update_profile(client_id: str, body: ProfileIn, user=Depends(current_u
 async def list_clients(user=Depends(require_staff)):
     f = {"role": "client", "trainer_id": str(user["_id"])} if user["role"] == "trainer" else {"role": "client", "nutritionist_id": str(user["_id"])}
     docs = await db.users.find(f).sort("name", 1).to_list(1000)
-    return [ser(d) for d in docs]
+    return [client_view(d, user) for d in docs]
 
 
 @api.get("/clients/{client_id}")
 async def get_client(client_id: str, user=Depends(current_user)):
-    return ser(await assert_access(user, client_id, allow_nutri=True))
+    return client_view(await assert_access(user, client_id, allow_nutri=True), user)
 
 
 class MeIn(BaseModel):
@@ -504,7 +593,7 @@ async def build_measurement(body: MeasurementIn, user: dict) -> dict:
         except ValueError:
             age = 0
     doc = body.model_dump()
-    doc.update({"trainer_id": c["trainer_id"], "created_at": now_iso()})
+    doc.update({"trainer_id": c.get("trainer_id", ""), "created_at": now_iso()})
     bf = body_fat(body.skinfolds, prof.get("sex", "M"), age)
     if bf:
         doc.update(bf)
@@ -571,12 +660,19 @@ class PlanIn(BaseModel):
     notify: bool = True
 
 
+async def plan_author(user: dict, client_id: str):
+    """Trainers manage clients' plans; any staff member can build their own plans."""
+    if user["role"] != "trainer" and str(user["_id"]) != client_id:
+        raise HTTPException(403, "Solo per il trainer")
+
+
 @api.post("/plans")
-async def create_plan(body: PlanIn, user=Depends(require_trainer)):
+async def create_plan(body: PlanIn, user=Depends(current_user)):
+    await plan_author(user, body.client_id)
     c = await assert_access(user, body.client_id)
     doc = body.model_dump()
     send = doc.pop("notify")
-    doc.update({"trainer_id": c["trainer_id"], "client_name": c["name"], "created_at": now_iso()})
+    doc.update({"trainer_id": c.get("trainer_id", ""), "client_name": c["name"], "created_at": now_iso()})
     await db.plans.insert_one(doc)
     if send:
         from extra import notify
@@ -603,10 +699,11 @@ async def plans_history(user=Depends(require_trainer)):
 
 
 @api.put("/plans/{plan_id}")
-async def update_plan(plan_id: str, body: PlanIn, user=Depends(require_trainer)):
+async def update_plan(plan_id: str, body: PlanIn, user=Depends(current_user)):
     p = await db.plans.find_one({"_id": oid(plan_id)})
     if not p:
         raise HTTPException(404, "Scheda non trovata")
+    await plan_author(user, p["client_id"])
     await assert_access(user, p["client_id"])
     await db.plans.update_one({"_id": oid(plan_id)}, {"$set": {"name": body.name, "notes": body.notes, "days": body.days,
                                                                "approach": body.approach, "active": body.active, "volume": body.volume,
@@ -841,7 +938,7 @@ class VideoIn(BaseModel):
 async def create_video(body: VideoIn, user=Depends(current_user)):
     c = await assert_access(user, body.client_id)
     doc = body.model_dump()
-    doc.update({"trainer_id": c["trainer_id"], "client_name": c["name"], "reviewed": False, "created_at": now_iso()})
+    doc.update({"trainer_id": c.get("trainer_id", ""), "client_name": c["name"], "reviewed": False, "created_at": now_iso()})
     await db.videos.insert_one(doc)
     return ser(doc)
 
@@ -1034,8 +1131,11 @@ async def delete_meal(meal_id: str, user=Depends(current_user)):
 # ---------- nutrition plan / targets / diary comments / team notes ----------
 class NutritionPlanIn(BaseModel):
     targets: dict = {}  # kcal, protein, carbs, fat
+    meal_plan: List[dict] = []
     notes: Optional[str] = ""
     approach: Optional[str] = ""
+    advice: Optional[str] = ""  # trainer's food advice (no grams / macros)
+    hide_numbers: bool = False
 
 
 @api.get("/clients/{client_id}/nutrition")
@@ -1043,7 +1143,12 @@ async def get_nutrition_plan(client_id: str, user=Depends(current_user)):
     c = await assert_access(user, client_id, allow_nutri=True)
     doc = await db.nutrition_plans.find_one({"client_id": client_id}) or {}
     out = {"targets": doc.get("targets") or {}, "meal_plan": doc.get("meal_plan") or [], "notes": doc.get("notes", ""), "approach": doc.get("approach", ""),
+           "advice": doc.get("advice", ""), "advice_by": doc.get("advice_by"), "hide_numbers": bool(doc.get("hide_numbers")),
            "updated_by": doc.get("updated_by"), "updated_at": doc.get("updated_at")}
+    if user["role"] == "client" and out["hide_numbers"]:
+        # eating-disorder safe mode: no kcal / macros / grams shown to the client
+        out["targets"] = {}
+        out["meal_plan"] = [{"meal": m.get("meal"), "items": re.sub(r"\s*\d+[.,]?\d*\s*(g|gr|grammi|kcal|ml)\b", "", m.get("items") or "", flags=re.I)} for m in out["meal_plan"]]
     if user["role"] == "client" and not visible(c, "nutrition"):
         out["targets"] = {}
         out["meal_plan"] = []
@@ -1056,10 +1161,19 @@ async def get_nutrition_plan(client_id: str, user=Depends(current_user)):
 @api.put("/clients/{client_id}/nutrition")
 async def set_nutrition_plan(client_id: str, body: NutritionPlanIn, user=Depends(require_staff)):
     await assert_access(user, client_id, allow_nutri=True)
+    if user["role"] == "trainer":
+        # By law a personal trainer may only give general food advice (no diets, grams or macros)
+        if re.search(r"\d+[.,]?\d*\s*(g|gr|grammi|grammo|kg|chili|hg|etti|kcal|cal|calorie|%|ml|cl|l)\b|\d+\s*%|\bmacro", body.advice or "", re.I):
+            raise HTTPException(400, "Il personal trainer può dare solo consigli alimentari generali: niente grammature, kcal o macro")
+        await db.nutrition_plans.update_one({"client_id": client_id}, {"$set": {"client_id": client_id, "advice": (body.advice or "")[:5000],
+                                                                                 "advice_by": user["name"], "advice_at": now_iso()}}, upsert=True)
+        from extra import notify
+        await notify(client_id, "Nuovi consigli alimentari", f"{user['name']} ha aggiornato i consigli alimentari", f"/nutrition-plan/{client_id}")
+        return await get_nutrition_plan(client_id, user)
     targets = {k: num(body.targets.get(k)) for k in ("kcal", "protein", "carbs", "fat") if num(body.targets.get(k))}
     await db.nutrition_plans.update_one({"client_id": client_id}, {"$set": {
         "client_id": client_id, "targets": targets, "meal_plan": body.meal_plan, "notes": body.notes, "approach": body.approach or "",
-        "updated_by": user["name"], "updated_at": now_iso()}}, upsert=True)
+        "hide_numbers": body.hide_numbers, "updated_by": user["name"], "updated_at": now_iso()}}, upsert=True)
     from extra import notify
     await notify(client_id, "Piano alimentare aggiornato", f"{user['name']} ha aggiornato il tuo piano", f"/nutrition-plan/{client_id}")
     return await get_nutrition_plan(client_id, user)
@@ -1196,18 +1310,54 @@ async def chat_messages(client_id: str, after: Optional[str] = None, thread: str
     return [ser(d) for d in docs]
 
 
+class ChatIn(BaseModel):
+    text: str = ""
+    e2e: Optional[dict] = None  # {nonce, sender_pk, boxes: {user_id: cipher_b64}} - end-to-end encrypted, server cannot read
+
+
 @api.post("/chat/{client_id}")
-async def chat_send(client_id: str, body: CommentIn, thread: str = "coach", user=Depends(current_user)):
+async def chat_send(client_id: str, body: ChatIn, thread: str = "coach", user=Depends(current_user)):
     c = await chat_access(user, client_id, thread)
-    if not body.text.strip():
+    if not body.text.strip() and not (body.e2e and body.e2e.get("boxes")):
         raise HTTPException(400, "Messaggio vuoto")
     doc = {"client_id": client_id, "author_id": str(user["_id"]), "author_name": user["name"], "author_role": user["role"],
-           "text": body.text.strip()[:4000], "read": False, "created_at": now_iso(), "thread": thread}
+           "read": False, "created_at": now_iso(), "thread": thread}
+    if body.e2e:
+        doc["e2e"] = {"nonce": str(body.e2e.get("nonce", ""))[:64], "sender_pk": str(body.e2e.get("sender_pk", ""))[:64],
+                      "boxes": {str(k): str(v)[:12000] for k, v in (body.e2e.get("boxes") or {}).items()}}
+        doc["text"] = ""
+    else:
+        doc["_sealed"] = seal({"text": body.text.strip()[:4000]})
     await db.chat.insert_one(doc)
     from extra import notify
     to = client_id if user["role"] != "client" else (c.get("nutritionist_id") if thread == "nutri" else c.get("trainer_id"))
-    await notify(to, f"Messaggio da {user['name']}", body.text.strip()[:80], f"/chat/{client_id}" + ("?thread=nutri" if thread == "nutri" else ""))
+    await notify(to, f"Messaggio da {user['name']}", "🔒 Nuovo messaggio cifrato", f"/chat/{client_id}" + ("?thread=nutri" if thread == "nutri" else ""))
     return ser(doc)
+
+
+@api.get("/chat/{client_id}/keys")
+async def chat_keys(client_id: str, thread: str = "coach", user=Depends(current_user)):
+    c = await chat_access(user, client_id, thread)
+    other = c.get("nutritionist_id") if thread == "nutri" else c.get("trainer_id")
+    ids = [i for i in {client_id, other} if i]
+    docs = await db.users.find({"_id": {"$in": [oid(i) for i in ids]}}).to_list(5)
+    return {str(d["_id"]): d.get("public_key") for d in docs}
+
+
+class PubKeyIn(BaseModel):
+    public_key: str = Field(min_length=20, max_length=64)
+    key_backup: str = Field(min_length=20, max_length=400)  # secret key encrypted on the device; always stored together with the public key
+
+
+@api.put("/me/public-key")
+async def set_public_key(body: PubKeyIn, user=Depends(current_user)):
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"public_key": body.public_key, "key_backup": body.key_backup}})
+    return {"ok": True}
+
+
+@api.get("/me/key-backup")
+async def get_key_backup(user=Depends(current_user)):
+    return {"public_key": user.get("public_key"), "key_backup": user.get("key_backup")}
 
 
 @api.get("/chat-unread")
@@ -1269,7 +1419,7 @@ async def client_context(cid: str) -> str:
     ms = await db.measurements.find({"client_id": cid}).sort("date", -1).to_list(3)
     plans = await db.plans.find({"client_id": cid}).sort("created_at", -1).to_list(3)
     maxes = await compute_maxes(cid)
-    return json.dumps({"nome": c["name"], "profilo": c.get("profile", {}), "abbonamento": (c.get("subscription") or {}).get("name"),
+    return json.dumps({"nome": c["name"], "profilo": ser(c).get("profile", {}), "abbonamento": (c.get("subscription") or {}).get("name"),
                        "misure_recenti": [{k: m.get(k) for k in ("date", "weight", "body_fat", "lean_mass", "fat_mass", "circumferences")} for m in ms],
                        "indici_calcolati": derive(ms[0], c.get("profile") or {}) if ms else {},
                        "schede_recenti": [{"nome": p["name"], "approccio": p.get("approach")} for p in plans],

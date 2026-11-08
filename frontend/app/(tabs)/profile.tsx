@@ -30,6 +30,7 @@ export function ProfileForm({ clientId, initial, name: initialName, onSaved }: {
   const { colors } = useTheme();
   useEffect(() => setP({ ...EMPTY_PROFILE, ...(initial || {}) }), [initial]);
   const set = (k: string) => (v: any) => setP((x: any) => ({ ...x, [k]: v }));
+  const setH = (k: string) => (v: any) => setP((x: any) => ({ ...x, health: { ...(x.health || {}), [k]: v } }));
   const save = async () => {
     setBusy(true);
     try {
@@ -94,6 +95,26 @@ export function ProfileForm({ clientId, initial, name: initialName, onSaved }: {
       {ANAMNESIS.map(([k, l]) => (
         <Field key={k} testID={`anamnesis-${k}`} label={l} multiline value={p.anamnesis?.[k] || ""} onChangeText={(v) => setP((x: any) => ({ ...x, anamnesis: { ...(x.anamnesis || {}), [k]: v } }))} />
       ))}
+      <H>Ritmo circadiano, sonno e attività</H>
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <Field testID="health-wake" label="Sveglia (hh:mm)" value={p.health?.wake || ""} onChangeText={setH("wake")} style={{ flex: 1 }} />
+        <Field testID="health-sleep" label="A letto (hh:mm)" value={p.health?.sleep || ""} onChangeText={setH("sleep")} style={{ flex: 1 }} />
+      </View>
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <Field testID="health-sleep-hours" label="Ore di sonno" keyboardType="decimal-pad" value={p.health?.sleep_hours || ""} onChangeText={setH("sleep_hours")} style={{ flex: 1 }} />
+        <Field testID="health-steps" label="Passi medi/giorno" keyboardType="number-pad" value={p.health?.steps || ""} onChangeText={setH("steps")} style={{ flex: 1 }} />
+      </View>
+      <Toggle testID="health-shifts" label="Lavoro su turni" value={!!p.health?.shifts} onChange={(v) => setH("shifts")(v)} />
+      {p.health?.shifts ? <Field testID="health-shifts-detail" label="Orari dei turni" multiline value={p.health?.shifts_detail || ""} onChangeText={setH("shifts_detail")} /> : null}
+      <Field testID="health-other" label="Altri valori (FC a riposo, HRV, pressione…)" multiline value={p.health?.other || ""} onChangeText={setH("other")} />
+      <Card>
+        <T style={{ fontWeight: "800" }}>Collega app salute</T>
+        <T muted style={{ fontSize: 12 }}>Google Health Connect, Apple Salute e Garmin Connect arriveranno con l&apos;app installata sul telefono. Per ora inserisci i valori a mano.</T>
+      </Card>
+      <H>Chi può vedere anamnesi e dati di salute</H>
+      <Toggle testID="share-trainer" label="Il mio personal trainer" value={p.share?.trainer !== false} onChange={(v) => setP((x: any) => ({ ...x, share: { ...(x.share || {}), trainer: v } }))} />
+      <Toggle testID="share-nutritionist" label="Il mio nutrizionista" value={p.share?.nutritionist !== false} onChange={(v) => setP((x: any) => ({ ...x, share: { ...(x.share || {}), nutritionist: v } }))} />
+      {p.hidden_sensitive ? <T muted style={{ fontSize: 12 }}>🔒 Il cliente non condivide con te anamnesi e dati di salute.</T> : null}
       <Field testID="profile-notes-input" label="Note" multiline value={p.notes} onChangeText={set("notes")} />
       {msg ? <T testID="profile-save-message" style={{ color: msg === "Profilo salvato" ? colors.success : colors.error }}>{msg}</T> : null}
       <Btn testID="profile-save-button" title="Salva profilo" loading={busy} onPress={save} />
@@ -218,6 +239,7 @@ export default function Profile() {
         </View>
       ) : null}
       <ErrorText text={err} />
+      <Btn testID="privacy-docs-button" variant="dark" icon="shield-checkmark" title="Privacy e documenti" onPress={() => router.push("/legal/all")} />
       <Btn testID="logout-button" variant="ghost" icon="log-out-outline" title="Esci" onPress={out} />
       {picker.element}
       <AvatarCrop uri={raw} onCancel={() => setRaw(null)} onDone={uploadAvatar} />

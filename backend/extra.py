@@ -2,11 +2,11 @@
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os, json, re, uuid, time, httpx, bcrypt
 
 from server import (api, db, ser, oid, now_iso, num, logger, current_user, require_trainer, require_staff,
-                    assert_access, EMERGENT_KEY)
+                    assert_access, EMERGENT_KEY, seal, daily_code)
 
 
 # ---------- AI (uses the coach's own OpenAI key when set, otherwise the Emergent key) ----------
@@ -211,6 +211,7 @@ class VolumeIn(BaseModel):
     goal: Optional[str] = ""
     freq: Optional[str] = ""
     districts: List[str] = []
+    given: dict = {}  # values the coach fixed (totale / upper / lower / per distretto); AI fills the rest
 
 
 @api.post("/ai/volume")
@@ -220,6 +221,7 @@ async def ai_volume(body: VolumeIn, user=Depends(require_trainer)):
     ctx = await client_context(body.client_id)
     return await ai_json("Sei un preparatore ISSA esperto di programmazione del volume allenante.",
                          f"Dati cliente: {ctx}\nObiettivo: {body.goal}\nFrequenza: {body.freq}\nDistretti: {', '.join(body.districts)}\n"
+                         f"Valori già fissati dal coach (rispettali esattamente e suddividi il resto): {json.dumps({k: v for k, v in body.given.items() if str(v).strip()})}\n"
                          'Proponi le serie allenanti settimanali. Formato: {"weekly_total": number, "per_district": {"Petto": number, ...}, "rationale": "breve spiegazione"}')
 
 
@@ -448,7 +450,7 @@ async def suggest_coach(client_id: str, body: SuggestCoachIn, user=Depends(requi
     t = await db.users.find_one({"_id": oid(body.trainer_id), "role": "trainer"})
     if not t:
         raise HTTPException(404, "Coach non trovato")
-    await notify(client_id, "Coach consigliato", f"{user['name']} ti consiglia {t['name']} (codice invito {t.get('invite_code', '')})", f"/staff/{body.trainer_id}")
+    await notify(client_id, "Coach consigliato", f"{user['name']} ti consiglia {t['name']} (codice invito di oggi {daily_code(body.trainer_id)})", f"/staff/{body.trainer_id}")
     return {"ok": True}
 
 
@@ -496,7 +498,8 @@ def clean_values(vals: List[dict]) -> List[dict]:
 @api.post("/blood-tests")
 async def blood_create(body: BloodIn, user=Depends(current_user)):
     c = await assert_access(user, body.client_id)
-    doc = {**body.model_dump(), "values": clean_values(body.values), "created_by": user["name"], "created_at": now_iso()}
+    doc = {"client_id": body.client_id, "date": body.date, "lab": body.lab, "file_path": body.file_path,
+           "_sealed": seal({"values": clean_values(body.values), "notes": body.notes or ""}), "created_by": user["name"], "created_at": now_iso()}
     await db.blood_tests.insert_one(doc)
     if user["role"] == "client":
         await notify_team(c, "Nuove analisi del sangue", f"{c['name']} ha caricato un referto", f"/blood/{body.client_id}")
@@ -509,7 +512,8 @@ async def blood_update(bid: str, body: BloodIn, user=Depends(current_user)):
     if not b or b["client_id"] != body.client_id:
         raise HTTPException(404, "Referto non trovato")
     await assert_access(user, body.client_id)
-    await db.blood_tests.update_one({"_id": oid(bid)}, {"$set": {**body.model_dump(), "values": clean_values(body.values), "updated_at": now_iso()}})
+    await db.blood_tests.update_one({"_id": oid(bid)}, {"$set": {"date": body.date, "lab": body.lab, "file_path": body.file_path, "values": None, "notes": None,
+                                                                 "_sealed": seal({"values": clean_values(body.values), "notes": body.notes or ""}), "updated_at": now_iso()}})
     return ser(await db.blood_tests.find_one({"_id": oid(bid)}))
 
 
@@ -527,3 +531,140 @@ async def blood_delete(bid: str, user=Depends(current_user)):
 async def blood_list(client_id: str, user=Depends(current_user)):
     await assert_access(user, client_id)
     return [ser(d) for d in await db.blood_tests.find({"client_id": client_id}).sort("date", -1).to_list(200)]
+
+
+# ---------- legal documents & consents ----------
+@api.get("/legal/docs")
+async def legal_docs(role: Optional[str] = None):
+    from legal import DOCS
+    return [d for d in DOCS if not role or role in d["roles"]]
+
+
+class ConsentIn(BaseModel):
+    id: str
+    accepted: bool = True
+
+
+@api.post("/me/consents")
+async def set_consent(body: ConsentIn, user=Depends(current_user)):
+    from legal import BY_ID, consent_records, required_for
+    if body.id not in BY_ID:
+        raise HTTPException(404, "Documento non trovato")
+    if not body.accepted and body.id in required_for(user["role"]):
+        raise HTTPException(400, "Documento obbligatorio: per revocarlo chiedi la chiusura dell'account")
+    rest = [c for c in (user.get("consents") or []) if c["id"] != body.id]
+    if body.accepted:
+        rest += consent_records([body.id])
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"consents": rest}})
+    return ser(await db.users.find_one({"_id": user["_id"]}))
+
+
+# ---------- trainer dashboard ----------
+@api.get("/dashboard")
+async def dashboard(user=Depends(require_staff)):
+    uid = str(user["_id"])
+    fld = "trainer_id" if user["role"] == "trainer" else "nutritionist_id"
+    clients = await db.users.find({"role": "client", fld: uid}).to_list(2000)
+    ids = [str(c["_id"]) for c in clients]
+    limit = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    sess = await db.sessions.find({"client_id": {"$in": ids}, "status": {"$in": ["in_progress", "paused"]}}).to_list(500)
+    online = [c for c in clients if (c.get("last_seen") or "") >= limit]
+    now = datetime.now(timezone.utc)
+    day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week0 = day0 - timedelta(days=day0.weekday())
+    appts = await db.appointments.find({("staff_id" if user["role"] == "nutritionist" else "trainer_id"): uid, "status": {"$ne": "cancelled"},
+                                        "start": {"$gte": week0.isoformat()[:16], "$lt": (week0 + timedelta(days=7)).isoformat()[:16]}}).to_list(1000)
+    today = [a for a in appts if a["start"][:10] == day0.strftime("%Y-%m-%d")]
+    monthly = 0.0
+    due = []
+    own_pkgs = None
+    if user["role"] == "nutritionist":
+        own_pkgs = {str(p["_id"]) for p in await db.packages.find({"owner_id": uid}, {"_id": 1}).to_list(500)}
+    for c in clients:
+        sub = c.get("subscription") or {}
+        if own_pkgs is not None and sub.get("package_id") not in own_pkgs:
+            continue
+        price = num(sub.get("price")) or 0
+        monthly += price / 12 if sub.get("billing") == "annuale" else price
+        nr = next_renewal(sub) if sub else None
+        if nr and 0 <= (nr.date() - now.date()).days <= 30:
+            due.append({"id": str(c["_id"]), "name": c["name"], "date": nr.strftime("%Y-%m-%d"), "price": price, "package": sub.get("name")})
+    by_client = {str(c["_id"]): c for c in clients}
+    return {"clients": len(clients),
+            "online": [{"id": str(c["_id"]), "name": c["name"], "avatar": c.get("avatar"), "last_seen": c.get("last_seen")} for c in online],
+            "active_sessions": [{"id": str(s["_id"]), "client_id": s["client_id"], "client_name": by_client[s["client_id"]]["name"],
+                                 "avatar": by_client[s["client_id"]].get("avatar"), "day_name": s.get("day_name"), "status": s["status"], "started_at": s["started_at"]} for s in sess],
+            "appointments_today": len(today), "appointments_week": len(appts),
+            "next_appointments": [ser(a) for a in sorted([a for a in appts if a["start"] >= now.isoformat()[:16]], key=lambda a: a["start"])[:5]],
+            "finance": {"monthly_estimate": round(monthly, 2), "renewals_30d": sorted(due, key=lambda x: x["date"]),
+                        "renewals_30d_total": round(sum(x["price"] for x in due), 2),
+                        "paying_clients": sum(1 for c in clients if c.get("subscription") and (own_pkgs is None or c["subscription"].get("package_id") in own_pkgs))}}
+
+
+# ---------- exercise library by district/muscle + coach's own videos ----------
+MUSCLE_IT = {"chest": "Petto", "lats": "Dorso", "middle back": "Dorso", "lower back": "Dorso", "traps": "Dorso", "shoulders": "Spalle",
+             "biceps": "Bicipiti", "forearms": "Avambracci", "triceps": "Tricipiti", "quadriceps": "Quadricipiti", "hamstrings": "Femorali",
+             "glutes": "Glutei", "abductors": "Glutei", "adductors": "Adduttori", "calves": "Polpacci", "abdominals": "Addome", "neck": "Collo"}
+
+
+@api.get("/exercises/library")
+async def exercise_library(district: Optional[str] = None, muscle: Optional[str] = None, user=Depends(current_user)):
+    try:
+        data = await exercises_db()
+    except Exception:
+        raise HTTPException(502, "Archivio esercizi non raggiungibile")
+    tree: dict = {}
+    for e in data:
+        for m in e.get("primaryMuscles", [])[:1]:
+            tree.setdefault(MUSCLE_IT.get(m, "Altro"), {}).setdefault(m, 0)
+            tree[MUSCLE_IT.get(m, "Altro")][m] += 1
+    items = []
+    if district or muscle:
+        for e in data:
+            pm = (e.get("primaryMuscles") or [""])[0]
+            if (muscle and pm == muscle) or (not muscle and MUSCLE_IT.get(pm, "Altro") == district):
+                items.append(ex_out(e))
+    mine = [ser(d) for d in await db.coach_exercises.find({"owner_id": str(user.get("trainer_id") or user["_id"]) if user["role"] == "client" else str(user["_id"]),
+                                                            **({"district": district} if district else {})}).sort("name", 1).to_list(500)]
+    return {"tree": tree, "items": items[:150], "mine": mine}
+
+
+class CoachExIn(BaseModel):
+    name: str = Field(min_length=1)
+    district: str
+    muscle: Optional[str] = ""
+    video_path: Optional[str] = None
+    images: List[str] = []
+    notes: Optional[str] = ""
+
+
+@api.post("/exercises/mine")
+async def add_my_exercise(body: CoachExIn, user=Depends(require_staff)):
+    doc = {**body.model_dump(), "owner_id": str(user["_id"]), "created_at": now_iso()}
+    await db.coach_exercises.insert_one(doc)
+    return ser(doc)
+
+
+@api.delete("/exercises/mine/{eid}")
+async def del_my_exercise(eid: str, user=Depends(require_staff)):
+    await db.coach_exercises.delete_one({"_id": oid(eid), "owner_id": str(user["_id"])})
+    return {"ok": True}
+
+
+# ---------- recent foods (manual entry memory) ----------
+@api.get("/foods/recent")
+async def recent_foods(client_id: str, user=Depends(current_user)):
+    await assert_access(user, client_id)
+    docs = await db.meals.find({"client_id": client_id}).sort("created_at", -1).to_list(600)
+    seen, out = set(), []
+    for m in docs:
+        k = (m.get("name") or "").strip().lower()
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        g = num(m.get("grams"))
+        per100 = {x: round((num(m.get(x)) or 0) * 100 / g, 2) for x in MACROS} if g else None
+        out.append({"name": m["name"], "grams": g, "per100": per100, **{x: m.get(x) for x in MACROS}})
+        if len(out) >= 60:
+            break
+    return out

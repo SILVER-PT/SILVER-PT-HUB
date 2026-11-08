@@ -1,6 +1,6 @@
 import { Pressable, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import Ionicons from "@react-native-vector-icons/ionicons";
+import { SilverIcon } from "@/src/ui";
 import { makeStyles, useTheme } from "@/src/theme";
 
 export function ClientHub({ clientId, trainer, nutri, visibility, chat, badges, nutriChat }: { clientId: string; trainer?: boolean; nutri?: boolean; visibility?: Record<string, boolean>; chat?: boolean; badges?: Record<string, number>; nutriChat?: boolean }) {
@@ -34,7 +34,7 @@ export function ClientHub({ clientId, trainer, nutri, visibility, chat, badges, 
           onPress={() => router.push(it.href as any)}
           style={({ pressed }) => [s.tile, pressed && { borderColor: colors.brandPrimary, transform: [{ scale: 0.97 }] }]}
         >
-          <Ionicons name={it.icon as any} size={24} color={colors.brandPrimary} />
+          <SilverIcon name={it.icon} />
           <Text style={s.tileText}>{it.label}</Text>
           {badges?.[it.key] ? (
             <View testID={`hub-${it.key}-badge`} style={s.badge}>

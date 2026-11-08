@@ -1,0 +1,59 @@
+{
+  "summary": "Iteration 9 (v9 features). Backend: 20/20 pytest pass (legal docs, consents at registration, daily HMAC invite code, POST /me/consents, AES-GCM sealing of profile anamnesis/health, blood tests and chat, share toggles hiding anamnesis from staff, E2E chat payloads/keys/public-key, chat notification, dashboard, exercise library + coach exercises, recent foods per100, trainer advice vs nutritionist numbers + hide_numbers, staff own plans, AI volume with given total=14 -> split 5/5/4). Frontend (390x844): login shows the HUB logo; register shows 8 consents, the read-doc sheet and accept-all (ticks only the 6 required); trainer dashboard tiles go to /team-live, /finance and /exercises; 'Il mio workout' tab works; the header logo is flip-logo-training on home and flip-logo-nutrition on /nutrition-plan/{id}; tapping it spins and opens /profile (shows the avatar); /legal/all; health and share fields; plan-editor Select popups (approach, district, technique) and the 3 volume modes; Petto library with images; trainer advice editor; body-figure on measurements; E2E chat checked both ways with 2 browser contexts (client sends, trainer decrypts, Mongo stores only boxes); client Cibo tab 'Dallo storico' sheet + proportional grams scaling (150g->300g doubles kcal/macros); plan items edit/remove; nutritionist home has the Nutrition logo and the upload privacy sheet before the first upload. Found 1 medium-high finance bug, 1 legal-bypass weakness and several medium/minor UX issues.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/dashboard (nutritionist)", "issue": "Finance counts every assigned client's subscription even when it was sold by the trainer. Nutri Bianchi's dashboard shows 60€/month from Marco Rossi's 'Coaching completo' (714€ annual), which is the trainer's package (payment trainer_id = trainer). Filter subscriptions/payments by package owner (package_id owner == user id). Reference: /app/backend/extra.py:580-586", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "PUT /api/clients/{id}/nutrition (trainer)", "issue": "The trainer advice regex only blocks g/gr/grammi/kcal/cal. 'TEST 1 kg di pasta, 30% proteine' was accepted (200). Add kg, %, ml, 'macro', 'proteine/carboidrati/grassi + number' and 'calorie'. Reference: server.py:1164"},
+      {"endpoint": "PUT /api/clients/{own_id}/nutrition (trainer own diet)", "issue": "A trainer on their own diet page always takes the advice-only path and cannot record their own targets/meal plan. Confirm this is intended."},
+      {"endpoint": "daily_code()", "issue": "Uses a fixed UTC+2 offset, but Europe/Rome is UTC+1 in winter, so the code rotates at 23:00 local time from Nov to Mar. Use zoneinfo('Europe/Rome'). Reference: server.py daily_code"},
+      {"endpoint": "Legacy users / consents", "issue": "Existing accounts (e.g. Marco Rossi) only have 'terms' accepted. There is no gate asking existing users to accept the required privacy / health_data (art. 9) / waiver documents after login, but their health data is already being processed."},
+      {"endpoint": "POST /api/auth/register (invite code)", "issue": "find_inviter scans every staff user and computes an HMAC for each on every registration (O(n)). OK now, but not scalable. Also no rate limit on code guessing (6 hex chars = 16.7M combinations per staff member per day)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "FlipLogo on client Cibo tab", "issue": "The food diary tab route is /feed, which is not in NUTRI_ROUTES, so the client's diet page shows the TRAINING coin instead of the SILVER-PT Nutrition logo. Add '/feed' for clients. Reference: /app/frontend/src/flip-logo.tsx:14", "testID": "flip-logo-training", "priority": "MEDIUM"},
+      {"component": "Food diary plan items", "issue": "The 'dismissed' state is local only (not persisted). After a reload, confirmed or removed plan items show up again, so the user may log the same item twice. Confirmed items are also not matched against meals already logged. Reference: /app/frontend/src/nutrition.tsx:122-193", "testID": "plan-items-card", "priority": "MEDIUM"},
+      {"component": "Plan item confirm/edit", "issue": "Confirm logs 0 kcal/macros and grams=null unless an exact name match exists in recent foods. Edit fills the name with '80g avena' (grams stay in the name, the grams field is empty). Edit also dismisses the item before the user saves, so cancelling loses it. Parse the leading/trailing grams into the grams field. Reference: nutrition.tsx:125,192", "testID": "plan-item-confirm-0 / plan-item-edit-0", "priority": "MEDIUM"},
+      {"component": "FlipLogo on Profile", "issue": "On /profile, tapping the coin turns it 180->360 and it stays on the coin side instead of the profile photo (the rotation is not reset when onProfile). Reference: flip-logo.tsx:27-38", "testID": "flip-logo", "priority": "LOW"},
+      {"component": "Dashboard vs Finance", "issue": "The tile shows 60€ (Math.round) while /finance shows 59.5€ for the same estimate. Make both use the same rounding.", "testID": "dash-finance-value", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "E2E chat multi-device", "issue": "The secret key is generated per device/browser (AsyncStorage on web). A login on a new device generates a new keypair and overwrites the server public_key. Older E2E messages can't be read on the new device, and messages sent while another device's key is registered can't be read on the original device (the key keeps flipping between devices). Note: the test browsers re-registered public keys for trainer@ and cliente@; real devices re-PUT their key on the next chat open. Consider a key backup/escrow (e.g. password-derived wrap) or per-device boxes. Reference: /app/frontend/src/e2e.ts:20-31", "affected_testIDs": ["chat-e2e-banner", "chat-msg-*"]},
+      {"flow": "Registration avatar upload", "issue": "The upload privacy sheet calls POST /me/consents while the user is still logged out (401 is silently ignored), so the upload_media consent is never recorded at sign-up. Include upload_media in the register consents when it was accepted. Reference: /app/frontend/src/media.tsx:52-57", "affected_testIDs": ["upload-privacy-accept", "register-avatar-button"]}
+    ],
+    "design_issues": [
+      {"screen": "Food diary plan items", "issues": ["The confirm/edit/remove buttons are 40x40, below the 44pt minimum"]},
+      {"screen": "Plan editor", "issues": ["The district Select has 10 options, but the exercise library also has Avambracci/Adduttori/Collo, so the two lists don't match"]},
+      {"screen": "Legal docs", "issues": ["The terms text still has placeholders '[TITOLARE: nome/ragione sociale] · P.IVA [P.IVA] · [INDIRIZZO] · [EMAIL] · PEC [PEC]'. These must be filled in before release"]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_silverpt_v9_legal_crypto_dashboard.py", "/app/test_reports/pytest/pytest_v9.xml"],
+  "action_items": [
+    "HIGH: In GET /api/dashboard (and /finance for the nutritionist), count only subscriptions/packages owned by the requesting staff member.",
+    "Add '/feed' (client Cibo tab) to NUTRI_ROUTES in src/flip-logo.tsx.",
+    "Persist plan-item confirm/remove state (or derive it from meals already logged that day). Parse grams from items like '80g avena'. Don't dismiss on edit until the item is saved.",
+    "Make the trainer advice validation stricter (kg, %, ml, calorie, macro words followed by numbers).",
+    "Add a consent gate after login for existing users who are missing required documents.",
+    "Use zoneinfo Europe/Rome for daily_code.",
+    "Plan E2E key backup / multi-device support. At least warn users that history is tied to the device.",
+    "Send upload_media in the register consents when it was accepted at sign-up.",
+    "Minor: FlipLogo reset on profile, rounding consistency, 44pt targets, district list consistency, fill in the legal placeholders."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1659 lines (limit 700). Split auth/profile/chat/nutrition into modules.",
+    "hide_numbers stripping applies the regex to m.get('items'). Fine while items is a string, but it drops any other meal_plan fields for the client.",
+    "Images use the JWT in the query string (/api/files/...?token=). The 30-day token leaks into logs/history. Prefer short-lived signed URLs.",
+    "Encryption at rest checked: users.profile._sealed (no plaintext anamnesis), blood_tests._sealed, chat._sealed or e2e boxes only."
+  ],
+  "updated_files": ["/app/backend/tests/test_silverpt_v9_legal_crypto_dashboard.py (new)"],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "~88% (requested flows work; Cibo-tab logo wrong, plan-item persistence issue)"},
+  "seed_data_creation": "No permanent data. TEST_ users/blood/meals/plans/coach_exercises/chat/notifications are deleted by id in the fixture teardown. The TEST e2e chat message in Marco's thread, the trainer's own test advice doc and the related notifications were deleted by id. Marco's profile was restored from a raw copy with share={trainer:true, nutritionist:true}. Side effect: the public_key of trainer@ and cliente@ was regenerated by the test browsers (fixed on the next chat open from the real device).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: export EXPO_PUBLIC_BACKEND_URL=$(grep EXPO_PUBLIC_BACKEND_URL /app/frontend/.env | cut -d= -f2) && pytest tests/test_silverpt_v9_legal_crypto_dashboard.py -n 0. The fixture registers a TEST client with the NUTRITIONIST's daily code (it gets nutritionist_id plus the nutri's trainer_id) and uses the 'nutri' chat thread so Marco's coach chat stays untouched. Server date is Nov 2026. Sheets/Select options need dispatch_event('click'). The client food diary is the 'Cibo' tab at /feed. Do E2E chat UI tests with 2 browser contexts (page.context.browser.new_context()).",
+  "rca_of_issue": "Dashboard finance: extra.py dashboard() adds c.subscription.price for every client in `clients` (filtered by nutritionist_id for nutritionists) without checking the subscription's package owner, so the trainer's coaching package is counted as nutritionist revenue. Wrong logo on the Cibo tab: the tab route is /feed, which is not in NUTRI_ROUTES."
+}

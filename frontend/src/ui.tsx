@@ -200,7 +200,8 @@ export function Sheet({ visible, onClose, title, children }: { visible: boolean;
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <Pressable style={s.backdrop} onPress={onClose} testID="sheet-backdrop" />
         <View style={[s.sheet, { paddingBottom: insets.bottom + 16 }]}>
-          <Laser />
+          <LinearGradient colors={[colors.silver, colors.surfaceSecondary]} style={{ height: 3 }} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
+          <View style={{ alignSelf: "center", width: 44, height: 4, borderRadius: 2, backgroundColor: colors.silver, marginTop: 8, opacity: 0.7 }} />
           <View style={s.sheetHead}>
             <Text style={s.headerTitle}>{title}</Text>
             <Pressable testID="sheet-close-button" onPress={onClose} hitSlop={8} style={s.iconBtn}>
@@ -309,7 +310,7 @@ export function Toggle({ label, value, onChange, testID, hint }: { label: string
 }
 
 export const useStyles = makeStyles((c) => ({
-  headerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, height: 64, gap: 4 },
+  headerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, height: 76, gap: 4 },
   headerTitle: { flex: 1, color: c.onSurface, fontSize: 20, fontWeight: "900", fontStyle: "italic", letterSpacing: 1, textTransform: "uppercase" },
   iconBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center", marginLeft: -8 },
   btn: { height: 50, borderRadius: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 18 },
@@ -330,7 +331,7 @@ export const useStyles = makeStyles((c) => ({
   chipText: { color: c.onSurfaceTertiary, fontSize: 13, fontWeight: "700" },
   chipTextActive: { color: c.onBrandTertiary },
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)" },
-  sheet: { backgroundColor: c.surfaceSecondary, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "88%", overflow: "hidden" },
+  sheet: { backgroundColor: c.surfaceSecondary, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "88%", overflow: "hidden", borderWidth: 1, borderBottomWidth: 0, borderColor: c.silver },
   sheetHead: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 12 },
   comment: { backgroundColor: c.surfaceTertiary, borderRadius: 12, padding: 12, gap: 4, borderLeftWidth: 3, borderLeftColor: c.silver },
   commentAuthor: { color: c.silver, fontWeight: "800", fontSize: 13 },
@@ -339,3 +340,15 @@ export const useStyles = makeStyles((c) => ({
   statValue: { color: c.onSurface, fontSize: 20, fontWeight: "900" },
   statUnit: { color: c.muted, fontSize: 12, fontWeight: "600" },
 }));
+
+// Brushed-chrome badge for section icons (metallic stops stay identical in every theme).
+const CHROME = ["#F4F5F7", "#9A9DA6", "#E3E5E9", "#7C7F88"] as const;
+export function SilverIcon({ name, size = 22, box = 40 }: { name: string; size?: number; box?: number }) {
+  const { colors } = useTheme();
+  return (
+    <LinearGradient colors={CHROME} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+      style={{ width: box, height: box, borderRadius: box / 2, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.brandPrimary }}>
+      <Ionicons name={name as any} size={size} color="#111216" />
+    </LinearGradient>
+  );
+}

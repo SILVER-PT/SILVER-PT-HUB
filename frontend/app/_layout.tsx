@@ -8,6 +8,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { queryClient } from "@/src/query-client";
 import { AuthProvider } from "@/src/auth";
+import { ConsentGate } from "@/src/consent-gate";
 import { colors } from "@/src/theme";
 
 LogBox.ignoreAllLogs(true);
@@ -20,7 +21,9 @@ export default function RootLayout() {
           <KeyboardProvider>
             <AuthProvider>
               <StatusBar style="light" />
-              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
+              <ConsentGate>
+                <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
+              </ConsentGate>
             </AuthProvider>
           </KeyboardProvider>
         </QueryClientProvider>

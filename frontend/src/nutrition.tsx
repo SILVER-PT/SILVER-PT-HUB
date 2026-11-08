@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import { useRouter } from "expo-router";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { api, fmtDate, num, today, useFetch } from "@/src/api";
@@ -9,7 +11,10 @@ import { useMediaPicker } from "@/src/media";
 import { useTheme } from "@/src/theme";
 
 export const MEALS = ["colazione", "pranzo", "cena", "spuntino"];
+const s44 = { width: 44, height: 44, alignItems: "center" as const, justifyContent: "center" as const };
 const micros = (f: any) => Object.fromEntries(["sugars", "fiber", "salt", "sodium"].map((k) => [k, f[k] === "" || f[k] == null ? null : num(f[k])]));
+const MICRO_KEYS = ["kcal", "protein", "carbs", "fat", "sugars", "fiber", "salt", "sodium"];
+const perGram = (v: Record<string, any>, g: number) => Object.fromEntries(Object.entries(v).map(([k, x]) => [k, (num(x) || 0) / g]));
 
 // Day / week / month intake, recalculated after every food added or removed.
 function PeriodSummary({ s }: { s: any }) {
@@ -58,6 +63,12 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
   const [aiBusy, setAiBusy] = useState(false);
   const [err, setErr] = useState("");
   const picker = useMediaPicker();
+  const recent = useFetch<any[]>(readOnly ? null : `/foods/recent?client_id=${clientId}`);
+  const [recentOpen, setRecentOpen] = useState(false);
+  const [dismissed, setDismissed] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    AsyncStorage.getItem(`diary_dismissed_${clientId}`).then((v) => v && setDismissed(JSON.parse(v))).catch(() => {});
+  }, [clientId]);
 
   const tot = (data || []).reduce((a, m) => ({ kcal: a.kcal + (m.kcal || 0), protein: a.protein + (m.protein || 0), carbs: a.carbs + (m.carbs || 0), fat: a.fat + (m.fat || 0) }), { kcal: 0, protein: 0, carbs: 0, fat: 0 });
 
@@ -68,8 +79,10 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
     setAiBusy(true);
     try {
       const r = await api("/food/analyze", { method: "POST", body: { image_base64: asset.base64 } });
-      setForm({ name: r.name, kcal: String(r.kcal ?? 0), protein: String(r.protein ?? 0), carbs: String(r.carbs ?? 0), fat: String(r.fat ?? 0), grams: "", source: "ai",
-        info: `${(r.items || []).map((i: any) => `${i.name} ~${i.grams}g`).join(", ")} · affidabilità ${r.confidence || "—"}` });
+      const g = (r.items || []).reduce((a: number, i: any) => a + (num(i.grams) || 0), 0);
+      setForm({ name: r.name, kcal: String(r.kcal ?? 0), protein: String(r.protein ?? 0), carbs: String(r.carbs ?? 0), fat: String(r.fat ?? 0), grams: g ? String(Math.round(g)) : "", source: "ai",
+        base: g ? perGram({ kcal: r.kcal, protein: r.protein, carbs: r.carbs, fat: r.fat }, g) : null,
+        info: `${(r.items || []).map((i: any) => `${i.name} ~${i.grams}g`).join(", ")} · affidabilità ${r.confidence || "—"} · cambiando i grammi i valori restano in proporzione` });
     } catch (e: any) {
       setErr(e.message);
     } finally {
@@ -87,6 +100,7 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
       }
       await api("/meals", { method: "POST", body: { client_id: clientId, date, meal_type: meal, name: form.name || "Alimento", grams: num(form.grams) || null,
         kcal: num(form.kcal), protein: num(form.protein), carbs: num(form.carbs), fat: num(form.fat), ...micros(form), source: form.source } });
+      if (form.planItem) dismiss(form.planItem);
       setForm(null);
       refresh();
     } catch (e: any) {
@@ -99,7 +113,57 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
     refresh();
   };
 
-  const setF = (k: string) => (v: string) => setForm((p: any) => ({ ...p, [k]: v }));
+  const setF = (k: string) => (v: string) => setForm((p: any) => ({ ...p, [k]: v, ...(k !== "grams" && k !== "name" ? { base: null } : {}) }));
+  // keep the nutrition-label proportions when grams change
+  const setGrams = (v: string) => setForm((p: any) => {
+    const g = num(v);
+    if (!p.base || !g) return { ...p, grams: v };
+    return { ...p, grams: v, ...Object.fromEntries(Object.entries(p.base).map(([k, x]) => [k, String(Math.round((x as number) * g * 10) / 10)])) };
+  });
+  const fromRecent = (r: any) => {
+    const vals = Object.fromEntries(MICRO_KEYS.map((k) => [k, r[k] == null ? "" : String(r[k])]));
+    setRecentOpen(false);
+    setForm({ name: r.name, grams: r.grams ? String(r.grams) : "", ...vals, source: "manual", base: r.per100 ? Object.fromEntries(Object.entries(r.per100).map(([k, x]) => [k, (x as number) / 100])) : null });
+  };
+  const parseItem = (s: string) => {
+    const m = s.match(/(\d+[.,]?\d*)\s*(g|gr|grammi|ml)\b/i);
+    const name = s.replace(/(\d+[.,]?\d*)\s*(g|gr|grammi|ml)\b/i, "").replace(/\s+/g, " ").trim().replace(/^(di\s+|d['’]\s*)/i, "").trim();
+    return { name: name || s, grams: m ? num(m[1].replace(",", ".")) : 0 };
+  };
+  const planItems: string[] = user?.role !== "client" ? [] : (plan.data?.meal_plan || [])
+    .filter((x: any) => { const n = (x.meal || "").toLowerCase(); return meal === "colazione" ? n.includes("colazione") : n.includes(meal); })
+    .flatMap((x: any) => (x.items || "").split(/\n|;|,(?!\d)/))
+    .map((s: string) => s.trim()).filter(Boolean)
+    .filter((s: string) => !(data || []).some((m) => m.meal_type === meal && m.name.toLowerCase() === parseItem(s).name.toLowerCase()));
+  // "80g avena" / "avena 80 g" -> { name: "avena", grams: 80 }
+  const dKey = (n: string) => `${date}:${meal}:${n}`;
+  const dismiss = (n: string) => {
+    const next = { ...dismissed, [dKey(n)]: true };
+    setDismissed(next);
+    AsyncStorage.setItem(`diary_dismissed_${clientId}`, JSON.stringify(next)).catch(() => {});
+  };
+  const editPlanItem = (n: string) => {
+    const it = parseItem(n);
+    const r = (recent.data || []).find((x) => x.name.toLowerCase() === it.name.toLowerCase());
+    const base = r?.per100 ? Object.fromEntries(Object.entries(r.per100).map(([k, x]) => [k, (x as number) / 100])) : null;
+    const g = it.grams || r?.grams || 0;
+    const vals = base && g ? Object.fromEntries(Object.entries(base).map(([k, x]) => [k, String(Math.round((x as number) * g * 10) / 10)])) : {};
+    setForm({ name: it.name, grams: g ? String(g) : "", kcal: "", protein: "", carbs: "", fat: "", ...vals, source: "manual", base, planItem: n });
+  };
+  const confirmPlanItem = async (n: string) => {
+    const it = parseItem(n);
+    const r = (recent.data || []).find((x) => x.name.toLowerCase() === it.name.toLowerCase());
+    if (!r?.per100 && !r?.kcal) return editPlanItem(n); // unknown values: let the user complete them
+    const g = it.grams || r.grams || 0;
+    const per = r.per100 && g ? Object.fromEntries(Object.entries(r.per100).map(([k, x]) => [k, Math.round(((x as number) * g) / 10) / 10])) : r;
+    try {
+      await api("/meals", { method: "POST", body: { client_id: clientId, date, meal_type: meal, name: it.name, grams: g || null, kcal: num(per.kcal), protein: num(per.protein), carbs: num(per.carbs), fat: num(per.fat), source: "manual" } });
+      dismiss(n);
+      refresh();
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  };
   const fv = (k: string) => (form?.[k] ?? "") as string;
 
   return (
@@ -148,7 +212,24 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
             <Btn testID="scan-barcode-button" icon="barcode" title="Scansiona" style={{ flex: 1 }} onPress={() => router.push({ pathname: "/barcode", params: { date, meal } })} />
             <Btn testID="ai-photo-button" icon="sparkles" variant="ghost" title="Foto AI" style={{ flex: 1 }} loading={aiBusy} onPress={analyze} />
           </View>
-          <Btn testID="manual-food-button" icon="create" variant="dark" title="Inserisci a mano" onPress={() => setForm({ name: "", kcal: "", protein: "", carbs: "", fat: "", grams: "", source: "manual" })} />
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Btn testID="manual-food-button" icon="create" variant="dark" title="A mano" style={{ flex: 1 }} onPress={() => setForm({ name: "", kcal: "", protein: "", carbs: "", fat: "", grams: "", source: "manual" })} />
+            <Btn testID="recent-food-button" icon="time" variant="dark" title="Dallo storico" style={{ flex: 1 }} onPress={() => setRecentOpen(true)} />
+          </View>
+          {planItems.filter((n: string) => !dismissed[dKey(n)]).length ? (
+            <Card accent testID="plan-items-card">
+              <T style={{ fontWeight: "900" }}>Dal tuo piano · {cap(meal)}</T>
+              <T muted style={{ fontSize: 12 }}>Conferma ciò che hai mangiato, modificalo o rimuovilo.</T>
+              {planItems.filter((n: string) => !dismissed[dKey(n)]).map((n: string, i: number) => (
+                <View key={n} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <T style={{ flex: 1, fontSize: 14 }}>{n}</T>
+                  <Pressable testID={`plan-item-confirm-${i}`} onPress={() => confirmPlanItem(n)} style={s44}><Ionicons name="checkmark-circle" size={26} color={colors.brandPrimary} /></Pressable>
+                  <Pressable testID={`plan-item-edit-${i}`} onPress={() => editPlanItem(n)} style={s44}><Ionicons name="create-outline" size={22} color={colors.silver} /></Pressable>
+                  <Pressable testID={`plan-item-remove-${i}`} onPress={() => dismiss(n)} style={s44}><Ionicons name="close-circle-outline" size={22} color={colors.muted} /></Pressable>
+                </View>
+              ))}
+            </Card>
+          ) : null}
           {aiBusy ? <T muted>L&apos;AI sta analizzando il piatto…</T> : null}
           <ErrorText text={err} />
         </>
@@ -179,7 +260,7 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
         <Field testID="food-name-input" label="Nome" value={fv("name")} onChangeText={setF("name")} />
         {!hide ? (<>
         <View style={{ flexDirection: "row", gap: 8 }}>
-          <Field testID="food-grams-input" label="Grammi" keyboardType="decimal-pad" value={fv("grams")} onChangeText={setF("grams")} style={{ flex: 1 }} />
+          <Field testID="food-grams-input" label="Grammi" keyboardType="decimal-pad" value={fv("grams")} onChangeText={setGrams} style={{ flex: 1 }} />
           <Field testID="food-kcal-input" label="Kcal" keyboardType="decimal-pad" value={fv("kcal")} onChangeText={setF("kcal")} style={{ flex: 1 }} />
         </View>
         <View style={{ flexDirection: "row", gap: 8 }}>
@@ -198,6 +279,15 @@ export function Nutrition({ clientId, tab, readOnly, title = "Alimentazione" }: 
         </View>
         </>) : null}
         <Btn testID="food-save-button" title={form?.id ? "Salva modifiche" : `Aggiungi a ${meal}`} onPress={save} />
+      </Sheet>
+      <Sheet visible={recentOpen} onClose={() => setRecentOpen(false)} title="Alimenti recenti">
+        {recent.data?.length === 0 ? <T muted>Nessun alimento ancora registrato.</T> : null}
+        {(recent.data || []).map((r, i) => (
+          <Pressable key={r.name} testID={`recent-food-${i}`} onPress={() => fromRecent(r)} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.divider }}>
+            <T style={{ fontWeight: "800" }}>{r.name}</T>
+            {!hide ? <T muted style={{ fontSize: 12 }}>{r.grams ? `${r.grams} g · ` : ""}{Math.round(r.kcal || 0)} kcal · P {Math.round(r.protein || 0)} · C {Math.round(r.carbs || 0)} · G {Math.round(r.fat || 0)}</T> : null}
+          </Pressable>
+        ))}
       </Sheet>
     </Screen>
   );

@@ -58,3 +58,19 @@ JWT email/password with roles (client registers with trainer invite code) · Ope
 - Real push notifications (native) — postponed by user
 - User will add own OpenAI key later (OPENAI_API_KEY)
 - Refactor server.py into routers
+
+## v9 (June 2026) — DONE (iterations 9-12 tested)
+- Logos: HUB (login/app icon), Training coin, Nutrition coin per section; header coin 60px; on Profile stays on photo
+- Silver chrome icons (SilverIcon), silver popup sheets
+- Legal: backend/legal.py (terms, GDPR privacy, art.9 health consent, fitness waiver, nutrition disclaimer, media, optional marketing/media marketing, professional declaration, upload notice) with placeholders [TITOLARE]/[P.IVA]...; required at registration; ConsentGate at root for existing users; /legal/all page; upload notice in media picker
+- Encryption: AES-256-GCM at rest (DATA_KEY in backend/.env) for profile anamnesis/health/injuries, blood tests, chat; E2E chat (tweetnacl box) with password-derived key backup (v2, v1 legacy fallback)
+- Daily rotating invite code (HMAC, Europe/Rome)
+- Dashboard tiles (clients live, appointments, finance, exercises library + coach videos); staff own workout/diet tab; client Training tab by period
+- Body figure (android/gynoid, somatotype, critical zones); health/circadian fields + share toggles
+- Diary: recent foods, plan items confirm/edit/remove, grams proportional scaling
+- Nutrition: only nutritionist sets grams/macros (hide_numbers DCA mode); trainer only generic advice (backend rejects quantities)
+- Plan editor: popup Select menus, volume modes total/upper-lower/district with AI split
+## Backlog
+- Health Connect / Apple Health / Garmin sync (native build)
+- Trainer followed by another coach in-app
+- Fill legal placeholders + lawyer review; push notifications; own OpenAI key; refactor server.py

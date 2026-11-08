@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { api, loadToken, setToken } from "@/src/api";
+import { clearKeys, myKeys } from "@/src/e2e";
 
 export type User = {
   id: string;
@@ -13,6 +14,7 @@ export type User = {
   nutritionist_id?: string;
   subscription?: Record<string, any> | null;
   staff?: { whatsapp?: string; bio?: string; title?: string; story?: string; story_public?: boolean };
+  consents?: { id: string; version: string; accepted_at: string }[];
   profile?: Record<string, any>;
 };
 
@@ -47,8 +49,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const r = await api(path, { method: "POST", body });
     await setToken(r.access_token);
     setUser(r.user);
+    // persist the password-derived E2E wrap key and restore/publish chat keys right away (survives reloads)
+    myKeys(r.user.id, r.user.public_key).catch(() => {});
   };
   const logout = async () => {
+    if (user) await clearKeys(user.id);
     await setToken(null);
     setUser(null);
   };
