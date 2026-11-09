@@ -78,4 +78,17 @@ export default function Login() {
             <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
               <Chip testID="role-client-chip" label="Sono un cliente" active={role === "client"} onPress={() => setRole("client")} />
               <Chip testID="role-trainer-chip" label="Sono il coach" active={role === "trainer"} onPress={() => setRole("trainer")} />
-              <Chip test
+              <Chip testID="role-nutritionist-chip" label="Nutrizionista / Dietista" active={role === "nutritionist"} onPress={() => setRole("nutritionist")} />
+            </View>
+            <Pressable testID="register-avatar-button" onPress={pickAvatar} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <View style={{ width: 72, height: 72, borderRadius: 36, borderWidth: 2, borderColor: avatar ? colors.brandPrimary : colors.border, overflow: "hidden", alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary }}>
+                {avatar ? <Image source={{ uri: avatar.uri }} style={{ width: 72, height: 72 }} /> : <Ionicons name="camera" size={28} color={colors.brandPrimary} />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <T style={{ fontWeight: "800" }}>Foto profilo *</T>
+                <T muted style={{ fontSize: 12 }}>{avatar ? "Tocca per cambiarla" : "Obbligatoria: sarà visibile nella tua scheda personale"}</T>
+              </View>
+            </Pressable>
+            <Field testID="register-name-input" label="Nome e cognome" value={f.name} onChangeText={set("name")} />
+            {role !== "trainer" && (
+              <Field testID="register-invite-input" label={
