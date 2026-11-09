@@ -91,4 +91,57 @@ export default function Login() {
             </Pressable>
             <Field testID="register-name-input" label="Nome e cognome" value={f.name} onChangeText={set("name")} />
             {role !== "trainer" && (
-              <Field testID="register-invite-input" label={role === "client" ? "Codice invito coach / nutrizionista
+              <Field testID="register-invite-input" label={role === "client" ? "Codice invito coach / nutrizionista" : "Codice invito coach (facoltativo)"} autoCapitalize="characters" value={f.invite_code} onChangeText={set("invite_code")} />
+            )}
+          </>
+        )}
+        <Field testID="login-email-input" label="Email" autoCapitalize="none" keyboardType="email-address" value={f.email} onChangeText={set("email")} />
+        <Field testID="login-password-input" label="Password" secureTextEntry value={f.password} onChangeText={set("password")} />
+        
+        {mode === "login" && (
+          <Pressable
+            testID="forgot-password-button"
+            onPress={() => router.push("/forgot-password")}
+            style={{ alignSelf: "flex-end", marginTop: -8 }}
+          >
+            <T style={{ fontSize: 13, fontWeight: "600", color: colors.brandPrimary }}>
+              Password dimenticata?
+            </T>
+          </Pressable>
+        )}
+
+        {mode === "register" && docs.length ? (
+          <View style={{ gap: 8 }} testID="register-consents">
+            <T style={{ fontWeight: "900" }}>Documenti da accettare</T>
+            <T muted style={{ fontSize: 12 }}>Tocca il titolo per leggere. * = obbligatorio. Il caricamento di foto e documenti include l&apos;informativa sui file.</T>
+            {docs.map((d) => (
+              <View key={d.id} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Pressable testID={`register-consent-${d.id}`} hitSlop={8} onPress={() => setAccepted({ ...accepted, [d.id]: !accepted[d.id] })}>
+                  <Ionicons name={accepted[d.id] ? "checkbox" : "square-outline"} size={26} color={accepted[d.id] ? colors.brandPrimary : colors.muted} />
+                </Pressable>
+                <Pressable style={{ flex: 1 }} onPress={() => setDoc(d)} testID={`register-consent-read-${d.id}`}>
+                  <T style={{ fontSize: 13, textDecorationLine: "underline" }}>{d.title}{d.required ? " *" : ""}</T>
+                </Pressable>
+              </View>
+            ))}
+            <Btn testID="register-accept-all" small variant="dark" icon="checkmark-done" title="Accetta tutti gli obbligatori" onPress={() => setAccepted({ ...accepted, ...Object.fromEntries(docs.filter((d) => d.required).map((d) => [d.id, true])) })} />
+          </View>
+        ) : null}
+        <ErrorText text={err} />
+        <Btn testID="login-submit-button" title={mode === "login" ? "Accedi" : "Registrati"} onPress={submit} loading={busy} />
+        <Btn
+          testID="login-toggle-mode-button"
+          variant="ghost"
+          title={mode === "login" ? "Non hai un account? Registrati" : "Hai già un account? Accedi"}
+          onPress={() => { setMode(mode === "login" ? "register" : "login"); setErr(""); }}
+        />
+      </KeyboardAwareScrollView>
+      {picker.element}
+      <AvatarCrop uri={raw} onCancel={() => setRaw(null)} onDone={(a) => { setAvatar(a); setRaw(null); }} />
+      <Sheet visible={!!doc} onClose={() => setDoc(null)} title={doc?.title || ""}>
+        <T style={{ fontSize: 13, lineHeight: 20 }}>{doc?.text?.trim()}</T>
+        <Btn testID="legal-accept-button" icon="checkmark" title="Accetto" onPress={() => { setAccepted({ ...accepted, [doc.id]: true }); setDoc(null); }} />
+      </Sheet>
+    </View>
+  );
+}
