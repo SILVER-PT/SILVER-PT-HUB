@@ -70,7 +70,12 @@ def ser(doc: Optional[dict]) -> Optional[dict]:
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: E402
 import base64, hmac, hashlib  # noqa: E402
 
-_AES = AESGCM(base64.b64decode(os.environ["DATA_KEY"]))
+data_key_env = os.environ.get("DATA_KEY")
+if not data_key_env:
+    # Genera una chiave temporanea di fallback se non è configurata
+    data_key_env = base64.b64encode(AESGCM.generate_key(bit_length=256)).decode()
+
+_AES = AESGCM(base64.b64decode(data_key_env))
 
 
 def seal(obj: Any) -> str:
