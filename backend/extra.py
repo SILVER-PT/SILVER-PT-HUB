@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import os, json, re, uuid, time, httpx, bcrypt
 
 from server import (api, db, ser, oid, now_iso, num, logger, current_user, require_trainer, require_staff,
-                    assert_access, EMERGENT_KEY, seal, daily_code)
+                    assert_access, seal, daily_code)
 
 
 # ---------- AI (uses the coach's own OpenAI key when set, otherwise the Emergent key) ----------
