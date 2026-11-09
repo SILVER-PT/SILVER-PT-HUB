@@ -4,10 +4,10 @@
 Personal trainer ISSA Europe: app to track and connect with clients. Appointments, profiles, ISSA measurements (circumferences + skinfolds), clients create profile & receive workout plans, start sessions, log planned vs done load/reps, charts of load/reps/execution/RIR progression, check photos (front, left side, back), posing photos for bodybuilding competitors, appointment comments, exercise video upload with trainer correction comments, nutrition diary with barcode and AI photo calorie/macro estimate. Black UI with red lasers and SILVER-PT logo.
 
 ## User choices
-JWT email/password with roles (client registers with trainer invite code) · OpenAI GPT-5.5 vision (Emergent key) · Open Food Facts · Emergent Object Storage · full flow.
+JWT email/password with roles (client registers with trainer invite code) · OpenAI vision · Open Food Facts · Standard Object Storage · full flow.
 
 ## Architecture
-- Backend: FastAPI single `server.py`, MongoDB (users, appointments, comments, measurements, plans, sessions, photos, videos, files, meals), object storage proxy, emergentintegrations LLM.
+- Backend: FastAPI single `server.py`, MongoDB (users, appointments, comments, measurements, plans, sessions, photos, videos, files, meals), object storage proxy, OpenAI LLM integration.
 - Frontend: Expo Router; tabs (Clienti/Home, Agenda, Video/Cibo, Profilo — role aware, NativeTabs on iOS 26+); screens client/[id], plans, plan-edit, session/[id], measurements, photos, videos, video/[id], progress (gifted-charts), nutrition, barcode (expo-camera), appointment/[id].
 
 ## Implemented (2026-11)
@@ -17,7 +17,7 @@ JWT email/password with roles (client registers with trainer invite code) · Ope
 - Plans editor, live sessions (planned vs done kg/reps/RIR/execution, timer), session comments
 - Progress charts (max load, reps, volume, RIR, execution) + weight/BF charts
 - Check photos (front/side-left/back) + posing (competitors), videos with trainer comments & review inbox
-- Nutrition: barcode (Open Food Facts), AI photo estimate (GPT-5.5), manual entry, daily totals
+- Nutrition: barcode (Open Food Facts), AI photo estimate (OpenAI), manual entry, daily totals
 - Italian decimal comma support
 
 ## Implemented (2026-11) — batch 2
@@ -37,10 +37,10 @@ JWT email/password with roles (client registers with trainer invite code) · Ope
 
 ## Implemented — batch 5
 - Flip coin logo (header, tap/hover reveals user avatar); PUT /api/auth/me (staff title/bio/WhatsApp + password change with bcrypt check) + profile banners
-- Copilot AI chat for coach (GPT-5.5 via Emergent key, optional client context, soft-clear)
+- Copilot AI chat for coach (OpenAI, optional client context, soft-clear)
 - Workout builder: AI/guided ISSA generator (/api/ai/plan), per-exercise type reps/time, intensity techniques, ISSA protocols (pyramids, waves, 5x5, GVT, rest-pause, drop set) adapted on estimated 1RM (/api/clients/{id}/maxes, Epley)
 - Session player: time-based exercises, rest timer with audio beep + haptics, duration/time range on completed sessions
-- Deferred: push notifications (needs google-services.json + native build)
+- Deferred: push notifications (needs native build)
 
 ## Backlog
 - P1: native date/time pickers, push reminders for appointments, photo side-by-side comparison
@@ -49,14 +49,13 @@ JWT email/password with roles (client registers with trainer invite code) · Ope
 
 ## v8 (June 2026) — DONE (iteration_8 tested)
 - Coin logo everywhere (login 1/3 screen, home, app icon/splash); header coin 50px → tap spins + opens Profile; notification bell (in-app + browser notifications on web)
-- Backend module `backend/extra.py`: notifications + reminders (subscription expiry, check frequency per staff), exercise library (free-exercise-db), AI helpers (volume, nutrition label, blood scan, nutrition approach — uses OPENAI_API_KEY if set else Emergent key), session pause/resume/delete, plan delete with notify, plan comparison, meals summary, custom foods, staff public profile, nutritionist choice, nutri-owned clients, suggest coach, blood tests
+- Backend module `backend/extra.py`: notifications + reminders (subscription expiry, check frequency per staff), exercise library (free-exercise-db), AI helpers (volume, nutrition label, blood scan, nutrition approach — uses OPENAI_API_KEY), session pause/resume/delete, plan delete with notify, plan comparison, meals summary, custom foods, staff public profile, nutritionist choice, nutri-owned clients, suggest coach, blood tests
 - Plan builder: weekly/district volume + AI, exercise images, anamnesis/category reminder, notify confirm; client plan view with day tabs + images
 - Session: pause/resume, save for later, stop sheet (save/delete), edit after save incl. date/time, 4s live sync
-- Agenda: month calendar + scrollable upcoming list, kinds/durations, Jitsi or own video link; WhatsApp templates
+- Agenda: month calendar + scrollable upcoming list, kinds/durations, video links; WhatsApp templates
 - Derived ISSA indexes, anamnesis, BB categories, contest countdown/off season, blood tests screen, nutritionist approach
 ## Backlog
 - Real push notifications (native) — postponed by user
-- User will add own OpenAI key later (OPENAI_API_KEY)
 - Refactor server.py into routers
 
 ## v9 (June 2026) — DONE (iterations 9-12 tested)
@@ -73,4 +72,4 @@ JWT email/password with roles (client registers with trainer invite code) · Ope
 ## Backlog
 - Health Connect / Apple Health / Garmin sync (native build)
 - Trainer followed by another coach in-app
-- Fill legal placeholders + lawyer review; push notifications; own OpenAI key; refactor server.py
+- Fill legal placeholders + lawyer review; push notifications; refactor server.py
