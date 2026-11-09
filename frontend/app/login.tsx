@@ -91,4 +91,4 @@ export default function Login() {
             </Pressable>
             <Field testID="register-name-input" label="Nome e cognome" value={f.name} onChangeText={set("name")} />
             {role !== "trainer" && (
-              <Field testID="register-invite-input" label={
+              <Field testID="register-invite-input" label={role === "client" ? "Codice invito coach / nutrizionista
