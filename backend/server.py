@@ -3,7 +3,7 @@ import logging
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from pymongo import MongoClient
@@ -18,17 +18,17 @@ app = FastAPI(title="SILVER-PT-HUB API", version="1.0.0")
 # Configurazione CORS (per permettere le chiamate da Vercel)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Puoi restringere all'URL di Vercel in produzione se preferisci
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Connessione MongoDB (legge la variabile d'ambiente o usa un fallback locale/atlas)
-MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://cluster0.xxxx.mongodb.net/")
-DB_NAME = os.getenv("DB_NAME", "silver_pt_hub")
+# Connessione MongoDB (legge MONGO_URL e DB_NAME dalle variabili d'ambiente di Render)
+MONGO_URL = os.getenv("MONGO_URL")
+DB_NAME = os.getenv("DB_NAME", "silver_pt")
 
-client = MongoClient(MONGO_URI)
+client = MongoClient(MONGO_URL)
 db = client[DB_NAME]
 users_collection = db["users"]
 
@@ -58,10 +58,6 @@ async def login(data: LoginModel):
     if not user:
         raise HTTPException(status_code=400, detail="Credenziali non valide")
     
-    # Verifica password (assumendo che sia salvata con bcrypt o gestita dal tuo sistema esistente)
-    # if not bcrypt.checkpw(data.password.encode('utf-8'), user["password"].encode('utf-8')):
-    #     raise HTTPException(status_code=400, detail="Password errata")
-    
     return {"ok": True, "token": "dummy-jwt-token", "message": "Login effettuato con successo"}
 
 @app.post("/auth/register")
@@ -87,16 +83,15 @@ async def register(data: RegisterModel):
 @app.post("/auth/forgot-password")
 async def forgot_password(data: ForgotPasswordModel):
     user = users_collection.find_one({"email": data.email})
-    # Per sicurezza non riveliamo se l'email esiste o meno nel database all'utente esterno
     if not user:
-        logger.info(richiesta di recupero per email non registrata: {data.email})
+        logger.info(f"Richiesta di recupero per email non registrata: {data.email}")
     
-    # Credenziali Gmail SMTP (configurate nelle variabili d'ambiente di Render)
-    gmail_user = os.getenv("GMAIL_USER")       # Esempio: tuamailnoreply@gmail.com
-    gmail_password = os.getenv("GMAIL_APP_PASSWORD") # Password per le app di Google
+    # Legge esattamente le variabili d'ambiente SMTP configurate su Render
+    gmail_user = os.getenv("SMTP_EMAIL")
+    gmail_password = os.getenv("SMTP_PASS")
     
     if not gmail_user or not gmail_password:
-        logger.error("Credenziali SMTP Gmail non configurate nel backend!")
+        logger.error("Credenziali SMTP non configurate nelle variabili d'ambiente!")
         raise HTTPException(status_code=500, detail="Errore di configurazione del server email")
 
     try:
@@ -113,7 +108,7 @@ async def forgot_password(data: ForgotPasswordModel):
         )
         msg.attach(MIMEText(body, "plain"))
         
-        # Connessione al server SMTP di Google
+        # Connessione al server SMTP di Gmail
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(gmail_user, gmail_password)
