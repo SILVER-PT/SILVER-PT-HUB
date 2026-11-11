@@ -80,22 +80,28 @@ async def register(data: RegisterModel):
     users_collection.insert_one(user_doc)
     return {"ok": True, "message": "Registrazione completata"}
 
-# Gestiamo tutte le possibili varianti di percorso (con o senza /api, con o senza slash finale)
 @app.post("/auth/forgot-password")
 @app.post("/api/auth/forgot-password")
 @app.post("/auth/forgot-password/")
 @app.post("/api/auth/forgot-password/")
 async def forgot_password(data: ForgotPasswordModel):
     user = users_collection.find_one({"email": data.email})
-    if not user:
-        logger.info(f"Richiesta di recupero per email non registrata: {data.email}")
     
-    # Legge esattamente le variabili d'ambiente SMTP configurate su Render
+    # Log di diagnostica per verificare le chiavi d'ambiente disponibili nel runtime
+    logger.info(f"Tutte le chiavi env disponibili: {list(os.environ.keys())}")
+    
     gmail_user = os.getenv("SMTP_EMAIL")
     gmail_password = os.getenv("SMTP_PASS")
     
+    if gmail_user:
+        gmail_user = gmail_user.strip()
+    if gmail_password:
+        gmail_password = gmail_password.strip()
+
+    logger.info(f"CHECK SMTP -> EMAIL trovata: {bool(gmail_user)}, PASS trovata: {bool(gmail_password)}")
+
     if not gmail_user or not gmail_password:
-        logger.error("Credenziali SMTP non configurate nelle variabili d'ambiente!")
+        logger.error("Credenziali SMTP non trovate o vuote nelle variabili d'ambiente di Render!")
         raise HTTPException(status_code=500, detail="Errore di configurazione del server email")
 
     try:
@@ -112,7 +118,6 @@ async def forgot_password(data: ForgotPasswordModel):
         )
         msg.attach(MIMEText(body, "plain"))
         
-        # Connessione al server SMTP di Gmail
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(gmail_user, gmail_password)
@@ -124,4 +129,4 @@ async def forgot_password(data: ForgotPasswordModel):
         
     except Exception as e:
         logger.error(f"Errore durante l'invio dell'email SMTP: {e}")
-        raise HTTPException(status_code=500, detail="Impossibile inviare l'email di recupero al momento.")
+        raise HTTPException(status_code=500, detail=f"Errore SMTP: {str(e)}")
