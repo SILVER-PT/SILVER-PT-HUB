@@ -1,8 +1,8 @@
 import os
 import logging
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import json
+import urllib.request
+import urllib.error
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
@@ -86,45 +86,53 @@ async def register(data: RegisterModel):
 @app.post("/api/auth/forgot-password/")
 async def forgot_password(data: ForgotPasswordModel):
     user = users_collection.find_one({"email": data.email})
+    if not user:
+        logger.info(f"Richiesta di recupero per email non registrata: {data.email}")
     
-    # Legge correttamente SMTP_EMAIL e supporta sia SMTP_PASS che SMTP_PASSWORD
-    gmail_user = os.getenv("SMTP_EMAIL")
-    gmail_password = os.getenv("SMTP_PASS") or os.getenv("SMTP_PASSWORD")
+    resend_api_key = os.getenv("RESEND_API_KEY")
+    resend_from = os.getenv("RESEND_FROM") or "onboarding@resend.dev"
     
-    if gmail_user:
-        gmail_user = gmail_user.strip()
-    if gmail_password:
-        gmail_password = gmail_password.strip()
-
-    logger.info(f"CHECK SMTP -> EMAIL trovata: {bool(gmail_user)}, PASS trovata: {bool(gmail_password)}")
-
-    if not gmail_user or not gmail_password:
-        logger.error("Credenziali SMTP non trovate o vuote nelle variabili d'ambiente di Render!")
+    if not resend_api_key:
+        logger.error("RESEND_API_KEY non trovata nelle variabili d'ambiente!")
         raise HTTPException(status_code=500, detail="Errore di configurazione del server email")
 
     try:
-        msg = MIMEMultipart()
-        msg["From"] = gmail_user
-        msg["To"] = data.email
-        msg["Subject"] = "Recupero Password - SILVER-PT-HUB"
+        url = "https://api.resend.com/emails"
+        payload = {
+            "from": resend_from,
+            "to": [data.email],
+            "subject": "Recupero Password - SILVER-PT-HUB",
+            "html": (
+                "<div style='font-family: Arial, sans-serif; color: #333;'>"
+                "<h2>Recupero Password - SILVER-PT-HUB</h2>"
+                "<p>Ciao,</p>"
+                "<p>Abbiamo ricevuto una richiesta di recupero password per il tuo account SILVER-PT-HUB.</p>"
+                "<p>Se non sei stato tu, puoi tranquillamente ignorare questa email.</p>"
+                "<br>"
+                "<p>Il team di <b>SILVER-PT</b></p>"
+                "</div>"
+            )
+        }
         
-        body = (
-            "Ciao,\n\n"
-            "Abbiamo ricevuto una richiesta di recupero password per il tuo account SILVER-PT-HUB.\n"
-            "Se non sei stato tu, puoi ignorare questa email.\n\n"
-            "Il team di SILVER-PT"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode('utf-8'),
+            headers={
+                "Authorization": f"Bearer {resend_api_key.strip()}",
+                "Content-Type": "application/json"
+            },
+            method="POST"
         )
-        msg.attach(MIMEText(body, "plain"))
         
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()
-        server.login(gmail_user, gmail_password)
-        server.sendmail(gmail_user, data.email, msg.as_string())
-        server.quit()
-        
-        logger.info(f"Email di recupero inviata con successo a {data.email}")
-        return {"ok": True, "message": "Istruzioni inviate via email"}
-        
+        with urllib.request.urlopen(req) as response:
+            response_body = response.read().decode('utf-8')
+            logger.info(f"Email di recupero inviata con successo tramite Resend a {data.email}. Risposta: {response_body}")
+            return {"ok": True, "message": "Istruzioni inviate via email"}
+            
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8')
+        logger.error(f"Errore Resend API HTTP {e.code}: {error_body}")
+        raise HTTPException(status_code=500, detail="Impossibile inviare l'email di recupero al momento.")
     except Exception as e:
-        logger.error(f"Errore durante l'invio dell'email SMTP: {e}")
-        raise HTTPException(status_code=500, detail=f"Errore SMTP: {str(e)}")
+        logger.error(f"Errore imprevisto durante l'invio dell'email: {e}")
+        raise HTTPException(status_code=500, detail="Errore interno durante l'invio dell'email.")
