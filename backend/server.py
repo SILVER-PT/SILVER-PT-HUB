@@ -80,7 +80,11 @@ async def register(data: RegisterModel):
     users_collection.insert_one(user_doc)
     return {"ok": True, "message": "Registrazione completata"}
 
+# Gestiamo tutte le possibili varianti di percorso (con o senza /api, con o senza slash finale)
 @app.post("/auth/forgot-password")
+@app.post("/api/auth/forgot-password")
+@app.post("/auth/forgot-password/")
+@app.post("/api/auth/forgot-password/")
 async def forgot_password(data: ForgotPasswordModel):
     user = users_collection.find_one({"email": data.email})
     if not user:
