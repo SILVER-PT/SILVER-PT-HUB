@@ -87,11 +87,9 @@ async def register(data: RegisterModel):
 async def forgot_password(data: ForgotPasswordModel):
     user = users_collection.find_one({"email": data.email})
     
-    # Log di diagnostica per verificare le chiavi d'ambiente disponibili nel runtime
-    logger.info(f"Tutte le chiavi env disponibili: {list(os.environ.keys())}")
-    
+    # Legge correttamente SMTP_EMAIL e supporta sia SMTP_PASS che SMTP_PASSWORD
     gmail_user = os.getenv("SMTP_EMAIL")
-    gmail_password = os.getenv("SMTP_PASS")
+    gmail_password = os.getenv("SMTP_PASS") or os.getenv("SMTP_PASSWORD")
     
     if gmail_user:
         gmail_user = gmail_user.strip()
