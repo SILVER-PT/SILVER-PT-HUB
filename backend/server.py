@@ -66,7 +66,27 @@ async def login(data: LoginModel):
     if not user:
         raise HTTPException(status_code=400, detail="Credenziali non valide")
     
-    return {"ok": True, "token": "dummy-jwt-token", "message": "Login effettuato con successo"}
+    # Verifica della password con bcrypt
+    password_valida = bcrypt.checkpw(
+        data.password.encode('utf-8'), 
+        user["password"].encode('utf-8')
+    )
+    
+    if not password_valida:
+        raise HTTPException(status_code=400, detail="Credenziali non valide")
+    
+    # Restituisce il token e l'oggetto user con l'id atteso dal frontend
+    return {
+        "ok": True, 
+        "token": "dummy-jwt-token", 
+        "user": {
+            "id": str(user["_id"]),
+            "name": user.get("name", ""),
+            "email": user["email"],
+            "role": user.get("role", "client")
+        },
+        "message": "Login effettuato con successo"
+    }
 
 @app.post("/auth/register")
 @app.post("/api/auth/register")
