@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/((?!_expo/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
