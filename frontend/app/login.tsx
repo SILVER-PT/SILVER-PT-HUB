@@ -1,147 +1,240 @@
-import { useState } from "react";
-import { Pressable, View, useWindowDimensions } from "react-native";
-import { Image } from "expo-image";
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator
+} from "react-native";
 import { useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
-import Ionicons from "@react-native-vector-icons/ionicons";
-import { useAuth } from "@/src/auth";
-import { api, uploadFile, useFetch } from "@/src/api";
-import { Btn, Chip, ErrorText, Field, Laser, Sheet, T } from "@/src/ui";
-import { useMediaPicker } from "@/src/media";
-import { AvatarCrop } from "@/src/avatar-crop";
-import { HUB } from "@/src/flip-logo";
-import { setPassphrase } from "@/src/e2e";
-import { useTheme } from "@/src/theme";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export default function Login() {
-  const { signIn, refresh } = useAuth();
+export default function LoginScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
-  const { width, height } = useWindowDimensions();
-  const coin = Math.min(height / 3, width - 48);
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [role, setRole] = useState<"client" | "trainer" | "nutritionist">("client");
-  const [f, setF] = useState({ name: "", email: "", password: "", invite_code: "" });
-  const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [raw, setRaw] = useState<string | null>(null);
-  const [avatar, setAvatar] = useState<{ uri: string; mimeType: string; fileName: string } | null>(null);
-  const picker = useMediaPicker();
-  const allDocs = useFetch<any[]>(mode === "register" ? "/legal/docs" : null);
-  const docs = (allDocs.data || []).filter((d) => d.roles.includes(role) && d.id !== "upload_media");
-  const [accepted, setAccepted] = useState<Record<string, boolean>>({});
-  const [doc, setDoc] = useState<any>(null);
-  const set = (k: string) => (v: string) => setF((p) => ({ ...p, [k]: v }));
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const pickAvatar = async () => {
-    const a = await picker.pick("images");
-    if (a) setRaw(a.uri);
-  };
+  const handleLogin = async () => {
+    if (!email || !password) {
+      setError("Compila tutti i campi");
+      return;
+    }
 
-  const submit = async () => {
-    setErr("");
-    if (mode === "register" && !avatar) return setErr("La foto profilo è obbligatoria");
-    const missing = docs.filter((d) => d.required && !accepted[d.id]);
-    if (mode === "register" && missing.length) return setErr(`Devi accettare: ${missing.map((d) => d.title).join(", ")}`);
-    setBusy(true);
-    setPassphrase(f.email, f.password);
     try {
-      if (mode === "login") await signIn("/auth/login", { email: f.email, password: f.password });
-      else {
-        await signIn("/auth/register", { ...f, role, consents: [...docs.filter((d) => accepted[d.id]).map((d) => d.id), "upload_media"] });
-        const path = await uploadFile(avatar!, "avatar.jpg");
-        await api("/me", { method: "PUT", body: { avatar: path } });
-        await refresh();
+      setLoading(true);
+      setError("");
+
+      const response = await fetch("https://silver-pt-hub.onrender.com/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Credenziali non valide");
       }
-      router.replace("/(tabs)");
+
+      // 🟢 CORRETTO: Verifichiamo data.user.id come restituito dal backend
+      if (data.user && data.user.id) {
+        await AsyncStorage.setItem("token", data.token || "");
+        await AsyncStorage.setItem("userId", data.user.id);
+        await AsyncStorage.setItem("userData", JSON.stringify(data.user));
+
+        // Reindirizza alla dashboard principale
+        router.replace("/(tabs)");
+      } else {
+        throw new Error("Dati utente incompleti nella risposta del server");
+      }
+
     } catch (e: any) {
-      setErr(e.message);
+      setError(e.message || "Errore di connessione al server");
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <KeyboardAwareScrollView bottomOffset={24} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 24, paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24, gap: 16, maxWidth: 560, width: "100%", alignSelf: "center" }}>
-        <Image testID="login-logo" source={HUB} style={{ width: coin, height: coin, alignSelf: "center" }} contentFit="contain" />
-        <Laser style={{ marginVertical: 8 }} />
-        <T style={{ fontSize: 26, fontWeight: "900", fontStyle: "italic", textTransform: "uppercase" }}>
-          {mode === "login" ? "Bentornato" : "Crea il tuo profilo"}
-        </T>
-        <T muted>{mode === "login" ? "Accedi per allenamenti, misure e alimentazione." : "I clienti usano il codice invito del proprio coach o nutrizionista."}</T>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={styles.wrapper}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <View style={styles.card}>
+          <Text style={styles.title}>BENTORNATO</Text>
+          <Text style={styles.subtitle}>
+            Accedi per allenamenti, misure e alimentazione.
+          </Text>
 
-        {mode === "register" && (
-          <>
-            <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-              <Chip testID="role-client-chip" label="Sono un cliente" active={role === "client"} onPress={() => setRole("client")} />
-              <Chip testID="role-trainer-chip" label="Sono il coach" active={role === "trainer"} onPress={() => setRole("trainer")} />
-              <Chip testID="role-nutritionist-chip" label="Nutrizionista / Dietista" active={role === "nutritionist"} onPress={() => setRole("nutritionist")} />
-            </View>
-            <Pressable testID="register-avatar-button" onPress={pickAvatar} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <View style={{ width: 72, height: 72, borderRadius: 36, borderWidth: 2, borderColor: avatar ? colors.brandPrimary : colors.border, overflow: "hidden", alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary }}>
-                {avatar ? <Image source={{ uri: avatar.uri }} style={{ width: 72, height: 72 }} /> : <Ionicons name="camera" size={28} color={colors.brandPrimary} />}
-              </View>
-              <View style={{ flex: 1 }}>
-                <T style={{ fontWeight: "800" }}>Foto profilo *</T>
-                <T muted style={{ fontSize: 12 }}>{avatar ? "Tocca per cambiarla" : "Obbligatoria: sarà visibile nella tua scheda personale"}</T>
-              </View>
-            </Pressable>
-            <Field testID="register-name-input" label="Nome e cognome" value={f.name} onChangeText={set("name")} />
-            {role !== "trainer" && (
-              <Field testID="register-invite-input" label={role === "client" ? "Codice invito coach / nutrizionista" : "Codice invito coach (facoltativo)"} autoCapitalize="characters" value={f.invite_code} onChangeText={set("invite_code")} />
-            )}
-          </>
-        )}
-        <Field testID="login-email-input" label="Email" autoCapitalize="none" keyboardType="email-address" value={f.email} onChangeText={set("email")} />
-        <Field testID="login-password-input" label="Password" secureTextEntry value={f.password} onChangeText={set("password")} />
-        
-        {mode === "login" && (
-          <Pressable
-            testID="forgot-password-button"
-            onPress={() => router.push("/forgot-password")}
-            style={{ alignSelf: "flex-end", marginTop: -8 }}
-          >
-            <T style={{ fontSize: 13, fontWeight: "600", color: colors.brandPrimary }}>
-              Password dimenticata?
-            </T>
-          </Pressable>
-        )}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        {mode === "register" && docs.length ? (
-          <View style={{ gap: 8 }} testID="register-consents">
-            <T style={{ fontWeight: "900" }}>Documenti da accettare</T>
-            <T muted style={{ fontSize: 12 }}>Tocca il titolo per leggere. * = obbligatorio. Il caricamento di foto e documenti include l&apos;informativa sui file.</T>
-            {docs.map((d) => (
-              <View key={d.id} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <Pressable testID={`register-consent-${d.id}`} hitSlop={8} onPress={() => setAccepted({ ...accepted, [d.id]: !accepted[d.id] })}>
-                  <Ionicons name={accepted[d.id] ? "checkbox" : "square-outline"} size={26} color={accepted[d.id] ? colors.brandPrimary : colors.muted} />
-                </Pressable>
-                <Pressable style={{ flex: 1 }} onPress={() => setDoc(d)} testID={`register-consent-read-${d.id}`}>
-                  <T style={{ fontSize: 13, textDecorationLine: "underline" }}>{d.title}{d.required ? " *" : ""}</T>
-                </Pressable>
-              </View>
-            ))}
-            <Btn testID="register-accept-all" small variant="dark" icon="checkmark-done" title="Accetta tutti gli obbligatori" onPress={() => setAccepted({ ...accepted, ...Object.fromEntries(docs.filter((d) => d.required).map((d) => [d.id, true])) })} />
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>EMAIL</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="name@example.com"
+              placeholderTextColor="#666"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
+            />
           </View>
-        ) : null}
-        <ErrorText text={err} />
-        <Btn testID="login-submit-button" title={mode === "login" ? "Accedi" : "Registrati"} onPress={submit} loading={busy} />
-        <Btn
-          testID="login-toggle-mode-button"
-          variant="ghost"
-          title={mode === "login" ? "Non hai un account? Registrati" : "Hai già un account? Accedi"}
-          onPress={() => { setMode(mode === "login" ? "register" : "login"); setErr(""); }}
-        />
-      </KeyboardAwareScrollView>
-      {picker.element}
-      <AvatarCrop uri={raw} onCancel={() => setRaw(null)} onDone={(a) => { setAvatar(a); setRaw(null); }} />
-      <Sheet visible={!!doc} onClose={() => setDoc(null)} title={doc?.title || ""}>
-        <T style={{ fontSize: 13, lineHeight: 20 }}>{doc?.text?.trim()}</T>
-        <Btn testID="legal-accept-button" icon="checkmark" title="Accetto" onPress={() => { setAccepted({ ...accepted, [doc.id]: true }); setDoc(null); }} />
-      </Sheet>
-    </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>PASSWORD</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="********"
+              placeholderTextColor="#666"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+            />
+          </View>
+
+          <TouchableOpacity
+            onPress={() => router.push("/forgot-password")}
+            style={styles.forgotContainer}
+          >
+            <Text style={styles.forgotText}>Password dimenticata?</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>ACCEDI</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.ghostButton}
+            onPress={() => router.push("/register")}
+          >
+            <Text style={styles.ghostButtonText}>NON HAI UN ACCOUNT? REGISTRATI</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  wrapper: {
+    flex: 1,
+    backgroundColor: "#0a0a0a",
+  },
+  scrollContainer: {
+    flexGrow: 1,
+    justifyContent: "center",
+    padding: 20,
+  },
+  card: {
+    width: "100%",
+    maxWidth: 400,
+    alignSelf: "center",
+    padding: 24,
+    backgroundColor: "#161616",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#fff",
+    textTransform: "uppercase",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "#aaa",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  inputContainer: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#ccc",
+    marginBottom: 6,
+    letterSpacing: 1,
+  },
+  input: {
+    width: "100%",
+    height: 48,
+    backgroundColor: "#222",
+    borderWidth: 1,
+    borderColor: "#444",
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    color: "#fff",
+    fontSize: 16,
+  },
+  forgotContainer: {
+    alignItems: "flex-end",
+    marginBottom: 20,
+  },
+  forgotText: {
+    color: "#ff4444",
+    fontSize: 13,
+  },
+  button: {
+    width: "100%",
+    height: 48,
+    backgroundColor: "#e60000",
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+  buttonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "bold",
+    letterSpacing: 1,
+  },
+  ghostButton: {
+    width: "100%",
+    height: 48,
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: "#e60000",
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 15,
+  },
+  ghostButtonText: {
+    color: "#e60000",
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
+  errorText: {
+    color: "#ff4444",
+    textAlign: "center",
+    marginBottom: 16,
+    fontSize: 14,
+  },
+});
