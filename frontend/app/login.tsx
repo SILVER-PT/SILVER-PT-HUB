@@ -69,7 +69,7 @@ export default function LoginScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.card}>
-          {/* Logo ingrandito */}
+          {/* Logo notevolmente ingrandito */}
           <Image
             source={require("../assets/images/logo-hub.png")}
             style={styles.logo}
@@ -117,6 +117,7 @@ export default function LoginScreen() {
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
+            onPass={handleLogin}
             onPress={handleLogin}
             disabled={loading}
           >
@@ -142,80 +143,83 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
-    backgroundColor: "#0a0a0a",
+    backgroundColor: "#000000", // Sfondo totalmente nero unificato, identico al logo
   },
   scrollContainer: {
     flexGrow: 1,
     justifyContent: "center",
+    alignItems: "center",
     padding: 20,
+    backgroundColor: "#000000",
   },
   card: {
     width: "100%",
-    maxWidth: 400,
-    alignSelf: "center",
-    padding: 24,
-    backgroundColor: "#161616",
-    borderRadius: 12,
+    maxWidth: 420,
+    padding: 28,
+    backgroundColor: "#000000", // Sfondo della card identico allo sfondo esterno per zero stacchi
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "#222",
   },
   logo: {
-    width: 130,   // Logo ingrandito
-    height: 130,  // Logo ingrandito
+    width: 160,   // Logo ingrandito in modo importante
+    height: 160,  // Logo ingrandito in modo importante
     alignSelf: "center",
-    marginBottom: 20,
+    marginBottom: 24,
   },
   title: {
-    fontSize: 22,
-    fontWeight: "700",
+    fontSize: 24,
+    fontWeight: "800",
     color: "#fff",
     textTransform: "uppercase",
     marginBottom: 8,
     textAlign: "center",
+    letterSpacing: 1,
   },
   subtitle: {
     fontSize: 14,
-    color: "#aaa",
+    color: "#888",
     textAlign: "center",
-    marginBottom: 24,
+    marginBottom: 28,
   },
   inputContainer: {
-    marginBottom: 16,
+    marginBottom: 18,
   },
   label: {
     fontSize: 12,
-    fontWeight: "600",
-    color: "#ccc",
+    fontWeight: "700",
+    color: "#aaa",
     marginBottom: 6,
     letterSpacing: 1,
   },
   input: {
     width: "100%",
-    height: 48,
-    backgroundColor: "#222",
+    height: 50,
+    backgroundColor: "#111", // Sfondo scuro e omogeneo per i campi
     borderWidth: 1,
-    borderColor: "#444",
-    borderRadius: 8,
+    borderColor: "#333",
+    borderRadius: 10,
     paddingHorizontal: 16,
     color: "#fff",
     fontSize: 16,
   },
   forgotContainer: {
     alignItems: "flex-end",
-    marginBottom: 20,
+    marginBottom: 24,
   },
   forgotText: {
-    color: "#ff4444",
+    color: "#ff3333",
     fontSize: 13,
+    fontWeight: "600",
   },
   button: {
     width: "100%",
-    height: 48,
+    height: 50,
     backgroundColor: "#e60000",
-    borderRadius: 8,
+    borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 10,
+    marginTop: 5,
   },
   buttonDisabled: {
     opacity: 0.7,
@@ -224,18 +228,18 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     fontWeight: "bold",
-    letterSpacing: 1,
+    letterSpacing: 1.2,
   },
   ghostButton: {
     width: "100%",
-    height: 48,
+    height: 50,
     backgroundColor: "transparent",
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: "#e60000",
-    borderRadius: 8,
+    borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 15,
+    marginTop: 16,
   },
   ghostButtonText: {
     color: "#e60000",
@@ -246,7 +250,8 @@ const styles = StyleSheet.create({
   errorText: {
     color: "#ff4444",
     textAlign: "center",
-    marginBottom: 16,
+    marginBottom: 18,
     fontSize: 14,
+    fontWeight: "600",
   },
 });
