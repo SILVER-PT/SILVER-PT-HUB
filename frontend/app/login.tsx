@@ -8,7 +8,8 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator
+  ActivityIndicator,
+  Image
 } from "react-native";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -44,13 +45,11 @@ export default function LoginScreen() {
         throw new Error(data.detail || "Credenziali non valide");
       }
 
-      // 🟢 CORRETTO: Verifichiamo data.user.id come restituito dal backend
       if (data.user && data.user.id) {
         await AsyncStorage.setItem("token", data.token || "");
         await AsyncStorage.setItem("userId", data.user.id);
         await AsyncStorage.setItem("userData", JSON.stringify(data.user));
 
-        // Reindirizza alla dashboard principale
         router.replace("/");
       } else {
         throw new Error("Dati utente incompleti nella risposta del server");
@@ -70,6 +69,12 @@ export default function LoginScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.card}>
+          <Image
+            source={require("../assets/images/logo-hub.png")}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+
           <Text style={styles.title}>BENTORNATO</Text>
           <Text style={styles.subtitle}>
             Accedi per allenamenti, misure e alimentazione.
@@ -152,6 +157,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#333",
+  },
+  logo: {
+    width: 100,
+    height: 100,
+    alignSelf: "center",
+    marginBottom: 16,
   },
   title: {
     fontSize: 22,
