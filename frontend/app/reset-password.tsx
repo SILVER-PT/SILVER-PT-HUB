@@ -1,8 +1,7 @@
 import React, { useState } from "react";
 import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { api } from "../api"; // Percorso relativo corretto rispetto alla cartella app/
-import { Text, Input, Button, useTheme } from "@/components"; // Se anche i componenti danno problemi, usa i relativi o mantieni @/ se funzionano
+import { Text, Input, Button, useTheme } from "@/components";
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
@@ -29,15 +28,27 @@ export default function ResetPasswordScreen() {
       setLoading(true);
       setError("");
 
-      // Chiamata al backend per aggiornare la password tramite il token
-      await api("/auth/reset-password", {
+      // Chiamata diretta al backend su Render
+      const response = await fetch("https://silver-pt-hub.onrender.com/api/auth/reset-password", {
         method: "POST",
-        body: { token, new_password: password },
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token: token,
+          new_password: password,
+        }),
       });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Errore durante il reset della password");
+      }
 
       setSuccess(true);
     } catch (e: any) {
-      setError(e.message || "Errore durante il reset della password");
+      setError(e.message || "Errore di connessione al server");
     } finally {
       setLoading(false);
     }
