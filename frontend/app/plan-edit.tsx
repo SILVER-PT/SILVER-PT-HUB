@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, View, ScrollView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { api, num } from "@/src/api";
@@ -10,10 +10,22 @@ import { ExerciseImages, ExercisePicker } from "@/src/exercises";
 import { ClientReminder } from "@/src/client-reminder";
 import { Select } from "@/src/select";
 
-const newEx = () => ({ name: "", sets: "3", reps: "10", load: "", rir: "2", rest: "90s", notes: "", type: "reps", technique: "", images: [] as string[], district: "" });
+const newEx = () => ({ name: "", sets: "3", reps: "10", load: "", rir: "2", rest: "90s", notes: "", type: "reps", technique: "", images: [] as string[], district: "", resistanceProfile: "Multiarticolare" });
 const APPROACHES = ["Ipertrofia", "Forza", "Ricomposizione", "Dimagrimento", "Powerbuilding", "Contest prep", "Ricondizionamento"];
+const RESISTANCE_PROFILES = ["Multiarticolare", "Allungamento", "Accorciamento", "Isometria"];
 
-// Planned weekly sets per district = sets of each exercise tagged with that district (days repeat once a week).
+// Funzione per generare automaticamente il nome della scheda: AAAA.MM.GG - [Approccio] - [Nota/Tipo]
+const generatePlanName = (approach: string, notes: string) => {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const appName = approach || "Ipertrofia";
+  const desc = notes ? notes.split(" ")[0] : "cardio HIIT";
+  return `${yyyy}.${mm}.${dd} - ${appName} - ${desc}`;
+};
+
+// Planned weekly sets per district
 const plannedVolume = (plan: any) => {
   const out: Record<string, number> = {};
   plan.days.forEach((d: any) => d.exercises.forEach((e: any) => { if (e.district) out[e.district] = (out[e.district] || 0) + (num(e.sets) || 0); }));
@@ -78,11 +90,56 @@ function VolumeCard({ plan, upd, clientId }: { plan: any; upd: (fn: (p: any) => 
   );
 }
 
+// Componente per la Mappa Anatomica Interattiva dei Distretti
+function InteractiveAnatomySelector({ selectedDistricts, onToggleDistrict }: { selectedDistricts: string[]; onToggleDistrict: (d: string) => void }) {
+  const { colors } = useTheme();
+  const [hovered, setHovered] = useState<string | null>(null);
+
+  return (
+    <Card accent style={{ padding: 16, alignItems: "center" }}>
+      <H style={{ marginBottom: 8 }}>Mappa Muscolare Interattiva</H>
+      <T muted style={{ fontSize: 12, textAlign: "center", marginBottom: 16 }}>
+        Seleziona i distretti da allenare in questo giorno. Clicca per attivare/disattivare.
+      </T>
+      <View style={{ width: "100%", flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8 }}>
+        {DISTRICTS.map((d) => {
+          const isSelected = selectedDistricts.includes(d);
+          const isHovered = hovered === d;
+          return (
+            <Pressable
+              key={d}
+              onPress={() => onToggleDistrict(d)}
+              onHoverIn={() => setHovered(d)}
+              onHoverOut={() => setHovered(null)}
+              style={({ pressed }) => [
+                {
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 10,
+                  borderWidth: 1.5,
+                  borderColor: isSelected ? "#e60000" : isHovered ? colors.brandPrimary : colors.silver,
+                  backgroundColor: isSelected ? "#e60000" : isHovered ? "#222" : colors.surfaceSecondary,
+                  transform: [{ scale: pressed ? 0.95 : 1 }],
+                  marginBottom: 6,
+                },
+              ]}
+            >
+              <T style={{ fontWeight: "800", fontSize: 13, color: isSelected ? "#fff" : colors.onSurface }}>
+                {d} {isSelected ? "✓" : ""}
+              </T>
+            </Pressable>
+          );
+        })}
+      </View>
+    </Card>
+  );
+}
+
 export default function PlanEdit() {
   const { clientId, planId } = useLocalSearchParams<{ clientId: string; planId?: string }>();
   const router = useRouter();
   const { colors } = useTheme();
-  const [plan, setPlan] = useState<any>(planId ? null : { name: "", notes: "", days: [{ name: "Giorno A", exercises: [newEx()] }], volume: { weekly_total: "", per_district: {} } });
+  const [plan, setPlan] = useState<any>(planId ? null : { name: generatePlanName("Ipertrofia", "cardio HIIT"), notes: "", days: [{ name: "Giorno A", districts: [], exercises: [newEx()] }], volume: { weekly_total: "", per_district: {} } });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
@@ -113,6 +170,7 @@ export default function PlanEdit() {
       setBusy(false);
     }
   };
+
   const ask = () => {
     if (!plan.name.trim()) return setErr("Inserisci il nome della scheda");
     setConfirm(true);
@@ -123,20 +181,51 @@ export default function PlanEdit() {
       <ClientReminder clientId={clientId} />
       <Btn testID="ai-plan-open-button" icon="sparkles" variant="ghost" title="Genera con AI / Guidata ISSA" onPress={() => setAiOpen(true)} />
       <AiPlanSheet visible={aiOpen} onClose={() => setAiOpen(false)} clientId={clientId} volume={plan.volume} onPlan={(g) => setPlan((p: any) => ({ ...p, name: p.name || g.name || "", approach: g.approach || p.approach, notes: g.notes || p.notes, days: g.days?.length ? g.days : p.days }))} />
-      <Field testID="plan-name-input" label="Nome scheda" placeholder="es. Ipertrofia - Blocco 1" value={plan.name} onChangeText={(v) => upd((p) => { p.name = v; })} />
-      <Field testID="plan-notes-input" label="Note" multiline value={plan.notes} onChangeText={(v) => upd((p) => { p.notes = v; })} />
-      <Select testID="approach-select" label="Approccio" value={plan.approach || ""} options={APPROACHES} onChange={(v) => upd((p) => { p.approach = v; })} />
-      <Field testID="plan-approach-input" placeholder="Oppure scrivi l'approccio (es. DUP, 5/3/1)" value={plan.approach || ""} onChangeText={(v) => upd((p) => { p.approach = v; })} />
+      
+      {/* Nomenclatura automatica / Modificabile */}
+      <Field testID="plan-name-input" label="Nome scheda (es. AAAA.MM.GG - Approccio - Note)" value={plan.name} onChangeText={(v) => upd((p) => { p.name = v; })} />
+      <Field testID="plan-notes-input" label="Note" multiline value={plan.notes} onChangeText={(v) => {
+        upd((p) => { 
+          p.notes = v; 
+          p.name = generatePlanName(p.approach, v);
+        });
+      }} />
+      <Select testID="approach-select" label="Approccio" value={plan.approach || ""} options={APPROACHES} onChange={(v) => {
+        upd((p) => { 
+          p.approach = v; 
+          p.name = generatePlanName(v, p.notes);
+        });
+      }} />
+      
       <VolumeCard plan={plan} upd={upd} clientId={clientId} />
       <Toggle testID="plan-active-toggle" label="Scheda attiva" hint="Se disattivata resta nello storico ma il cliente non la vede in Home" value={plan.active !== false} onChange={(v) => upd((p) => { p.active = v; })} />
+      
+      {/* Gestione Giorni e Selettore Anatomico */}
       {plan.days.map((d: any, di: number) => (
-        <View key={di} style={{ gap: 8 }} testID={`plan-day-${di}`}>
+        <View key={di} style={{ gap: 12, marginTop: 12 }} testID={`plan-day-${di}`}>
           <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>
             <Field testID={`day-name-input-${di}`} label={`Giorno ${di + 1}`} value={d.name} onChangeText={(v) => upd((p) => { p.days[di].name = v; })} style={{ flex: 1 }} />
             <Pressable testID={`day-remove-${di}`} onPress={() => upd((p) => { p.days.splice(di, 1); })} style={{ padding: 12 }}>
               <Ionicons name="trash-outline" size={20} color={colors.muted} />
             </Pressable>
           </View>
+
+          {/* Mappa anatomica interattiva per selezionare i distretti del giorno */}
+          <InteractiveAnatomySelector
+            selectedDistricts={d.districts || []}
+            onToggleDistrict={(districtName) => {
+              upd((p) => {
+                const day = p.days[di];
+                if (!day.districts) day.districts = [];
+                if (day.districts.includes(districtName)) {
+                  day.districts = day.districts.filter((x: string) => x !== districtName);
+                } else {
+                  day.districts.push(districtName);
+                }
+              });
+            }}
+          />
+
           {d.exercises.map((e: any, ei: number) => {
             const f = (k: string) => (v: any) => upd((p) => { p.days[di].exercises[ei][k] = v; });
             const key = `${di}-${ei}`;
@@ -149,7 +238,7 @@ export default function PlanEdit() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <T style={{ fontWeight: "900" }} numberOfLines={1}>{e.name || "Nuovo esercizio"}</T>
-                    <T muted style={{ fontSize: 12 }}>{e.sets}×{e.reps}{e.load ? ` @ ${e.load}kg` : ""} · RIR {e.rir || "—"} · rec {e.rest || "—"}{e.district ? ` · ${e.district}` : ""}</T>
+                    <T muted style={{ fontSize: 12 }}>{e.resistanceProfile || "Multiarticolare"} · {e.sets}×{e.reps}{e.load ? ` @ ${e.load}kg` : ""} · RIR {e.rir || "—"}{e.district ? ` · ${e.district}` : ""}</T>
                   </View>
                   <Ionicons name={isOpen ? "chevron-up" : "chevron-down"} size={20} color={colors.muted} />
                 </Pressable>
@@ -166,10 +255,16 @@ export default function PlanEdit() {
                       <Btn testID={`ex-images-${di}-${ei}`} small variant="dark" icon="images" title={e.images?.length ? "Cambia immagini" : "Aggiungi immagini"} style={{ flex: 1 }} onPress={() => setPick({ di, ei })} />
                       {e.images?.length ? <Btn small variant="ghost" icon="close" title="Rimuovi" onPress={() => f("images")([])} /> : null}
                     </View>
+                    
                     <View style={{ flexDirection: "row", gap: 8 }}>
-                      <Select testID={`ex-district-${di}-${ei}`} label="Distretto" value={e.district} options={DISTRICTS} onChange={f("district")} />
+                      <Select testID={`ex-district-${di}-${ei}`} label="Distretto Muscolare" value={e.district} options={d.districts?.length ? d.districts : DISTRICTS} onChange={f("district")} />
+                      <Select testID={`ex-profile-${di}-${ei}`} label="Profilo Resistenza" value={e.resistanceProfile || "Multiarticolare"} options={RESISTANCE_PROFILES} allowClear={false} onChange={f("resistanceProfile")} />
+                    </View>
+
+                    <View style={{ flexDirection: "row", gap: 8 }}>
                       <Select testID={`ex-type-${di}-${ei}`} label="Tipo" value={e.type === "time" ? "A tempo (sec)" : "Ripetizioni"} options={["Ripetizioni", "A tempo (sec)"]} allowClear={false} onChange={(v) => f("type")(v === "Ripetizioni" ? "reps" : "time")} />
                     </View>
+
                     {e.scheme?.length ? (
                       <View style={{ gap: 4 }} testID={`ex-scheme-${di}-${ei}`}>
                         <T style={{ fontWeight: "800", fontSize: 13, color: colors.brandPrimary }}>{e.protocol}</T>
@@ -202,14 +297,21 @@ export default function PlanEdit() {
               </Card>
             );
           })}
-          <Btn testID={`add-exercise-${di}`} small variant="ghost" icon="add" title="Esercizio" onPress={() => { upd((p) => { p.days[di].exercises.push(newEx()); }); setOpen(`${di}-${d.exercises.length}`); }} />
+          
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Btn testID={`add-exercise-${di}`} small variant="ghost" icon="add" title="Aggiungi Esercizio" style={{ flex: 1 }} onPress={() => { upd((p) => { p.days[di].exercises.push(newEx()); }); setOpen(`${di}-${d.exercises.length}`); }} />
+            <Btn testID={`add-superset-${di}`} small variant="dark" icon="git-merge" title="Superserie (+ Esercizio)" style={{ flex: 1 }} onPress={() => { upd((p) => { p.days[di].exercises.push({ ...newEx(), notes: "Superserie" }); }); setOpen(`${di}-${d.exercises.length}`); }} />
+          </View>
         </View>
       ))}
-      <Btn testID="add-day-button" variant="dark" icon="add" title="Aggiungi giorno" onPress={() => upd((p) => { p.days.push({ name: `Giorno ${String.fromCharCode(65 + p.days.length)}`, exercises: [newEx()] }); })} />
+
+      <Btn testID="add-day-button" variant="dark" icon="add" title="Aggiungi giorno" onPress={() => upd((p) => { p.days.push({ name: `Giorno ${String.fromCharCode(65 + p.days.length)}`, districts: [], exercises: [newEx()] }); })} />
       <ErrorText text={err} />
       <Btn testID="plan-save-button" icon="save" title="Salva scheda" loading={busy} onPress={ask} />
+      
       <ExercisePicker visible={!!pick} onClose={() => setPick(null)} initial={pick ? plan.days[pick.di]?.exercises[pick.ei]?.name || "" : ""}
         onPick={(x) => pick && upd((p) => { const e = p.days[pick.di].exercises[pick.ei]; e.images = x.images; if (!e.name && x.name) e.name = x.name; })} />
+      
       <Sheet visible={confirm} onClose={() => setConfirm(false)} title="Notificare il cliente?">
         <T>Vuoi avvisare il cliente che la scheda è stata {planId ? "modificata" : "creata"}?</T>
         <Btn testID="plan-save-notify" icon="notifications" title="Salva e notifica" onPress={() => save(true)} />
