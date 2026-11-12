@@ -69,6 +69,7 @@ export default function LoginScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.card}>
+          {/* Logo ingrandito */}
           <Image
             source={require("../assets/images/logo-hub.png")}
             style={styles.logo}
@@ -159,10 +160,10 @@ const styles = StyleSheet.create({
     borderColor: "#333",
   },
   logo: {
-    width: 100,
-    height: 100,
+    width: 130,   // Logo ingrandito
+    height: 130,  // Logo ingrandito
     alignSelf: "center",
-    marginBottom: 16,
+    marginBottom: 20,
   },
   title: {
     fontSize: 22,
