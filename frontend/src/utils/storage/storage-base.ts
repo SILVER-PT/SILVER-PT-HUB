@@ -14,8 +14,8 @@ export abstract class StorageBase {
   }
 
   // raw is whatever AsyncStorage / SecureStore returned: a JSON-encoded string
-  // (because setItem always JSON.stringifies) or null if the key was missing.
-  // We always JSON.parse so values round-trip correctly across types.
+  // or a plain raw string (like a JWT token). If JSON.parse fails, we gracefully 
+  // return the raw string itself so plain text/tokens round-trip correctly.
   protected retrieve<Fallback extends StorageItemValue>(
     raw: string | null,
     fallback: Fallback,
@@ -24,8 +24,8 @@ export abstract class StorageBase {
     try {
       return JSON.parse(raw) as Fallback;
     } catch (e) {
-      this.warn("retrieve", "parse error", e);
-      return fallback;
+      // Se non è un JSON valido (es. un token JWT), restituisce la stringa grezza
+      return raw as unknown as Fallback;
     }
   }
 
