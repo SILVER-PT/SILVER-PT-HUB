@@ -216,3 +216,38 @@ async def reset_password(data: ResetPasswordModel):
     
     logger.info(f"Password aggiornata con successo per l'utente {user.get('email')}")
     return {"ok": True, "message": "Password aggiornata con successo"}
+# --- ENDPOINT DI SUPPORTO DASHBOARD PER EVITARE 404 ---
+@app.get("/api/clients")
+@app.get("/clients")
+async def get_clients():
+    return []
+
+@app.get("/api/notifications/unread")
+@app.get("/notifications/unread")
+async def get_unread_notifications():
+    return {"count": 0, "notifications": []}
+
+@app.get("/api/dashboard")
+@app.get("/dashboard")
+async def get_dashboard_data():
+    return {
+        "ok": True,
+        "message": "Dashboard dati operativi",
+        "stats": {
+            "active_clients": 0,
+            "workouts_completed": 0
+        }
+    }
+
+@app.get("/api/users/me")
+@app.get("/auth/me/profile")
+async def get_user_profile():
+    return {
+        "ok": True,
+        "user": {
+            "id": "active-session",
+            "email": "lorenzosilvestri@hotmail.it",
+            "name": "Lorenzo",
+            "role": "client"
+        }
+    }
