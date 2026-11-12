@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { api } from "@/api"; // Assicurati che il percorso dell'helper api sia corretto nel tuo progetto
-import { Text, Input, Button, useTheme } from "@/components"; // Adatta ai tuoi componenti UI esistenti
+import { api } from "../api"; // Percorso relativo corretto rispetto alla cartella app/
+import { Text, Input, Button, useTheme } from "@/components"; // Se anche i componenti danno problemi, usa i relativi o mantieni @/ se funzionano
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
