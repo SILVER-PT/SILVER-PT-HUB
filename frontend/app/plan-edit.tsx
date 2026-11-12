@@ -91,41 +91,39 @@ function VolumeCard({ plan, upd, clientId }: { plan: any; upd: (fn: (p: any) => 
 }
 
 // Componente per la Mappa Anatomica Interattiva dei Distretti
-// Mappa Anatomica Vettoriale Interattiva del Corpo Umano
-// Mappa Anatomica Vettoriale del Corpo Umano con SVG interattivo
+// Selettore Anatomico Vettoriale Professionale (Anatomical SVG Map)
 function InteractiveAnatomySelector({ selectedDistricts, onToggleDistrict }: { selectedDistricts: string[]; onToggleDistrict: (d: string) => void }) {
   const { colors } = useTheme();
-  const [hovered, setHovered] = useState<string | null>(null);
 
-  // Mappa dei distretti associati alle parti anatomiche della sagoma
-  const muscleZones = [
-    { key: "Petto", label: "Petto", top: "24%", left: "38%", width: "24%", height: "10%" },
-    { key: "Spalle", label: "Spalle", top: "21%", left: "28%", width: "44%", height: "8%" },
-    { key: "Bicipiti", label: "Bicipiti", top: "33%", left: "22%", width: "12%", height: "14%" },
-    { key: "Tricipiti", label: "Tricipiti", top: "33%", left: "66%", width: "12%", height: "14%" },
-    { key: "Addome", label: "Addome", top: "35%", left: "38%", width: "24%", height: "14%" },
-    { key: "Dorso", label: "Dorso (Post.)", top: "25%", left: "38%", width: "24%", height: "15%" },
-    { key: "Quadricipiti", label: "Quadricipiti", top: "52%", left: "33%", width: "15%", height: "20%" },
-    { key: "Femorali", label: "Femorali (Post.)", top: "52%", left: "52%", width: "15%", height: "20%" },
-    { key: "Glutei", label: "Glutei", top: "48%", left: "36%", width: "28%", height: "10%" },
-    { key: "Polpacci", label: "Polpacci", top: "75%", left: "35%", width: "30%", height: "15%" },
-    { key: "Avambracci", label: "Avambracci", top: "48%", left: "18%", width: "12%", height: "14%" },
-    { key: "Adduttori", label: "Adduttori", top: "62%", left: "40%", width: "20%", height: "10%" },
+  // Distretti anatomici con etichette professionali
+  const anatomyParts = [
+    { id: "Spalle", label: "SPALLE", x: 140, y: 75, r: 28 },
+    { id: "Petto", label: "PETTO", x: 140, y: 125, r: 26 },
+    { id: "Bicipiti", label: "BICIPITI", x: 88, y: 135, r: 20 },
+    { id: "Tricipiti", label: "TRICIPITI", x: 192, y: 135, r: 20 },
+    { id: "Addome", label: "ADDOME", x: 140, y: 175, r: 24 },
+    { id: "Dorso", label: "DORSO", x: 140, y: 145, r: 25 },
+    { id: "Avambracci", label: "AVAMBRACCI", x: 75, y: 195, r: 18 },
+    { id: "Quadricipiti", label: "QUADRICIPITI", x: 122, y: 260, r: 30 },
+    { id: "Femorali", label: "FEMORALI", x: 158, y: 260, r: 30 },
+    { id: "Glutei", label: "GLUTEI", x: 140, y: 220, r: 25 },
+    { id: "Adduttori", label: "ADDUTTORI", x: 140, y: 295, r: 20 },
+    { id: "Polpacci", label: "POLPACCI", x: 140, y: 350, r: 22 },
   ];
 
   return (
     <Card accent style={{ padding: 16, alignItems: "center" }}>
-      <H style={{ marginBottom: 4 }}>SELETTORE ANATOMICO UMANO</H>
-      <T muted style={{ fontSize: 12, textAlign: "center", marginBottom: 16 }}>
-        Clicca direttamente sui distretti sulla sagoma corporea: si illumineranno in rosso vivo (<T style={{ color: "#e60000", fontWeight: "bold" }}>#e60000</T>).
+      <H style={{ marginBottom: 4, letterSpacing: 1 }}>SELETTORE ANATOMICO</H>
+      <T muted style={{ fontSize: 12, textAlign: "center", marginBottom: 14 }}>
+        Clicca sui gruppi muscolari sul modello anatomico. I distretti selezionati si illumineranno in rosso (<T style={{ color: "#e60000", fontWeight: "bold" }}>#e60000</T>).
       </T>
 
-      {/* Contenitore della sagoma anatomica */}
+      {/* Box con Modello Anatomico Vettoriale Pulito */}
       <View style={{
         width: "100%",
-        maxWidth: 280,
-        height: 380,
-        backgroundColor: "#080808",
+        maxWidth: 300,
+        height: 400,
+        backgroundColor: "#050505",
         borderRadius: 16,
         borderWidth: 1.5,
         borderColor: "#222",
@@ -135,62 +133,61 @@ function InteractiveAnatomySelector({ selectedDistricts, onToggleDistrict }: { s
         marginBottom: 16,
         overflow: "hidden"
       }}>
-        {/* Sagoma di fondo del corpo umano stilizzata */}
-        <View style={{ position: "absolute", opacity: 0.2, justifyContent: "center", alignItems: "center" }}>
-          <Ionicons name="body" size={320} color={colors.silver} />
+        {/* Sagoma di sfondo stilizzata del corpo umano */}
+        <View style={{ position: "absolute", opacity: 0.12, justifyContent: "center", alignItems: "center" }}>
+          <Ionicons name="body" size={360} color={colors.silver} />
         </View>
 
-        {/* Zone muscolari interattive posizionate anatomicamente sulla sagoma */}
-        {muscleZones.map((zone) => {
-          const isSelected = selectedDistricts.includes(zone.key);
-          const isHovered = hovered === zone.key;
+        {/* Pulsanti anatomici circolari/distrettuali posizionati con precisione */}
+        {anatomyParts.map((part) => {
+          const isSelected = selectedDistricts.includes(part.id);
           return (
             <Pressable
-              key={zone.key}
-              onPress={() => onToggleDistrict(zone.key)}
-              onHoverIn={() => setHovered(zone.key)}
-              onHoverOut={() => setHovered(null)}
+              key={part.id}
+              onPress={() => onToggleDistrict(part.id)}
               style={({ pressed }) => [
                 {
                   position: "absolute",
-                  top: zone.top,
-                  left: zone.left,
-                  width: zone.width,
-                  height: zone.height,
-                  borderRadius: 8,
-                  borderWidth: 1.5,
-                  borderColor: isSelected ? "#e60000" : isHovered ? colors.brandPrimary : "rgba(255,255,255,0.15)",
-                  backgroundColor: isSelected ? "rgba(230,0,0,0.7)" : isHovered ? "rgba(230,0,0,0.25)" : "rgba(25,25,25,0.6)",
+                  left: part.x - part.r,
+                  top: part.y - part.r,
+                  width: part.r * 2,
+                  height: part.r * 2,
+                  borderRadius: part.r,
+                  borderWidth: 2,
+                  borderColor: isSelected ? "#e60000" : "rgba(255,255,255,0.2)",
+                  backgroundColor: isSelected ? "rgba(230,0,0,0.85)" : "rgba(20,20,20,0.8)",
                   justifyContent: "center",
                   alignItems: "center",
-                  transform: [{ scale: pressed ? 0.95 : 1 }],
+                  transform: [{ scale: pressed ? 0.92 : 1 }],
+                  shadowColor: isSelected ? "#e60000" : "transparent",
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.8,
+                  shadowRadius: 8,
                 },
               ]}
             >
               <T style={{ 
                 fontWeight: "900", 
-                fontSize: 10, 
-                color: isSelected ? "#fff" : colors.onSurface, 
+                fontSize: 9, 
+                color: isSelected ? "#fff" : colors.muted, 
                 textAlign: "center",
-                textShadowColor: "rgba(0, 0, 0, 0.75)",
-                textShadowOffset: { width: 0, height: 1 },
-                textShadowRadius: 2
+                letterSpacing: 0.2
               }}>
-                {zone.key.split(" ")[0]}
+                {part.label}
               </T>
             </Pressable>
           );
         })}
       </View>
 
-      {/* Elenco testuale di riscontro dei distretti attivi */}
+      {/* Badge dei distretti attivi */}
       <View style={{ width: "100%", flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 6 }}>
         {selectedDistricts.length === 0 ? (
           <T muted style={{ fontSize: 12, fontStyle: "italic" }}>Nessun distretto selezionato per questo giorno</T>
         ) : (
           selectedDistricts.map((d) => (
-            <View key={d} style={{ backgroundColor: "#e60000", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
-              <T style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>{d} ✓</T>
+            <View key={d} style={{ backgroundColor: "#e60000", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}>
+              <T style={{ color: "#fff", fontSize: 11, fontWeight: "900", letterSpacing: 0.5 }}>{d.toUpperCase()} ●</T>
             </View>
           ))
         )}
