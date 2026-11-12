@@ -69,7 +69,7 @@ export default function LoginScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.card}>
-          {/* Logo notevolmente ingrandito */}
+          {/* Logo ingrandito e sfondo uniformato */}
           <Image
             source={require("../assets/images/logo-hub.png")}
             style={styles.logo}
@@ -117,7 +117,6 @@ export default function LoginScreen() {
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
-            onPass={handleLogin}
             onPress={handleLogin}
             disabled={loading}
           >
@@ -143,7 +142,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
-    backgroundColor: "#000000", // Sfondo totalmente nero unificato, identico al logo
+    backgroundColor: "#000000",
   },
   scrollContainer: {
     flexGrow: 1,
@@ -156,14 +155,14 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 420,
     padding: 28,
-    backgroundColor: "#000000", // Sfondo della card identico allo sfondo esterno per zero stacchi
+    backgroundColor: "#000000",
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#222",
   },
   logo: {
-    width: 160,   // Logo ingrandito in modo importante
-    height: 160,  // Logo ingrandito in modo importante
+    width: 160,
+    height: 160,
     alignSelf: "center",
     marginBottom: 24,
   },
@@ -195,7 +194,7 @@ const styles = StyleSheet.create({
   input: {
     width: "100%",
     height: 50,
-    backgroundColor: "#111", // Sfondo scuro e omogeneo per i campi
+    backgroundColor: "#111",
     borderWidth: 1,
     borderColor: "#333",
     borderRadius: 10,
