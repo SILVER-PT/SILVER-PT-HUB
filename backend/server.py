@@ -58,6 +58,9 @@ def read_root():
     return {"status": "online", "message": "SILVER-PT-HUB Backend operativo"}
 
 @app.post("/auth/login")
+@app.post("/api/auth/login")
+@app.post("/auth/login/")
+@app.post("/api/auth/login/")
 async def login(data: LoginModel):
     user = users_collection.find_one({"email": data.email})
     if not user:
@@ -66,6 +69,9 @@ async def login(data: LoginModel):
     return {"ok": True, "token": "dummy-jwt-token", "message": "Login effettuato con successo"}
 
 @app.post("/auth/register")
+@app.post("/api/auth/register")
+@app.post("/auth/register/")
+@app.post("/api/auth/register/")
 async def register(data: RegisterModel):
     existing = users_collection.find_one({"email": data.email})
     if existing:
@@ -92,17 +98,13 @@ async def register(data: RegisterModel):
 async def forgot_password(data: ForgotPasswordModel):
     user = users_collection.find_one({"email": data.email})
     
-    # Anche se l'utente non esiste, per sicurezza restituiamo comunque OK per evitare enumerazione email,
-    # ma se esiste generiamo il token.
     if user:
         reset_token = secrets.token_urlsafe(32)
-        # Salviamo il token nel database associato all'utente
         users_collection.update_one(
             {"email": data.email},
             {"$set": {"reset_token": reset_token}}
         )
         
-        # Link che punta alla tua app frontend su Vercel
         reset_link = f"https://silver-pt-training.vercel.app/reset-password?token={reset_token}"
         
         brevo_api_key = os.getenv("BREVO_API_KEY")
@@ -164,15 +166,12 @@ async def forgot_password(data: ForgotPasswordModel):
 @app.post("/auth/reset-password/")
 @app.post("/api/auth/reset-password/")
 async def reset_password(data: ResetPasswordModel):
-    # Cerca l'utente tramite il token di reset
     user = users_collection.find_one({"reset_token": data.token})
     if not user:
         raise HTTPException(status_code=400, detail="Token non valido o scaduto")
     
-    # Effettua l'hashing della nuova password
     hashed_password = bcrypt.hashpw(data.new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     
-    # Aggiorna la password e rimuove il token usato
     users_collection.update_one(
         {"_id": user["_id"]},
         {
