@@ -15,7 +15,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("silver-pt-backend")
 
 app = FastAPI(title="SILVER-PT-HUB API", version="1.0.0")
-
+@app.get("/api/cs")
+@app.get("/cs")
+async def handle_undefined_cs(role: str = None):
+    return []
 # Configurazione CORS (per permettere le chiamate da Vercel)
 app.add_middleware(
     CORSMiddleware,
