@@ -51,7 +51,7 @@ export default function LoginScreen() {
         await AsyncStorage.setItem("userData", JSON.stringify(data.user));
 
         // Reindirizza alla dashboard principale
-        router.replace("/(tabs)");
+        router.replace("/index");
       } else {
         throw new Error("Dati utente incompleti nella risposta del server");
       }
