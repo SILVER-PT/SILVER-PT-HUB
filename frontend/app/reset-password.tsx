@@ -1,12 +1,20 @@
 import React, { useState } from "react";
-import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator
+} from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { Text, Input, Button, useTheme } from "@/components";
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
   const { token } = useLocalSearchParams<{ token?: string }>();
-  const theme = useTheme();
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -28,7 +36,6 @@ export default function ResetPasswordScreen() {
       setLoading(true);
       setError("");
 
-      // Chiamata diretta al backend su Render
       const response = await fetch("https://silver-pt-hub.onrender.com/api/auth/reset-password", {
         method: "POST",
         headers: {
@@ -56,10 +63,8 @@ export default function ResetPasswordScreen() {
 
   if (!token) {
     return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <Text variant="body" style={{ color: "#ff4444", textAlign: "center" }}>
-          Token di reset mancante o non valido.
-        </Text>
+      <View style={styles.container}>
+        <Text style={styles.errorText}>Token di reset mancante o non valido.</Text>
       </View>
     );
   }
@@ -67,14 +72,12 @@ export default function ResetPasswordScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={{ flex: 1, backgroundColor: theme.colors.background }}
+      style={styles.wrapper}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.card}>
-          <Text variant="header" style={styles.title}>
-            NUOVA PASSWORD
-          </Text>
-          <Text variant="body" style={styles.subtitle}>
+          <Text style={styles.title}>REIMPOSTA PASSWORD</Text>
+          <Text style={styles.subtitle}>
             Inserisci la tua nuova password per completare il recupero dell'account.
           </Text>
 
@@ -85,44 +88,57 @@ export default function ResetPasswordScreen() {
               <Text style={styles.successText}>
                 Password aggiornata con successo! Ora puoi effettuare il login con la nuova password.
               </Text>
-              <Button
-                title="Torna al Login"
+              <TouchableOpacity
+                style={styles.button}
                 onPress={() => router.replace("/login")}
-                style={{ marginTop: 20 }}
-              />
+              >
+                <Text style={styles.buttonText}>TORNA AL LOGIN</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <>
-              <Input
-                label="NUOVA PASSWORD"
-                placeholder="********"
-                secureTextEntry
-                value={password}
-                onChangeText={setPassword}
-              />
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>NUOVA PASSWORD</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="********"
+                  placeholderTextColor="#666"
+                  secureTextEntry
+                  value={password}
+                  onChangeText={setPassword}
+                />
+              </View>
 
-              <Input
-                label="CONFERMA PASSWORD"
-                placeholder="********"
-                secureTextEntry
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                style={{ marginTop: 15 }}
-              />
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>CONFERMA PASSWORD</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="********"
+                  placeholderTextColor="#666"
+                  secureTextEntry
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                />
+              </View>
 
-              <Button
-                title="Aggiorna Password"
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
                 onPress={handleReset}
-                loading={loading}
-                style={{ marginTop: 25 }}
-              />
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>AGGIORNA PASSWORD</Text>
+                )}
+              </TouchableOpacity>
 
-              <Button
-                title="Torna al Login"
-                variant="ghost"
+              <TouchableOpacity
+                style={styles.ghostButton}
                 onPress={() => router.replace("/login")}
-                style={{ marginTop: 10 }}
-              />
+              >
+                <Text style={styles.ghostButtonText}>TORNA INDIETRO AL LOGIN</Text>
+              </TouchableOpacity>
             </>
           )}
         </View>
@@ -132,6 +148,10 @@ export default function ResetPasswordScreen() {
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    flex: 1,
+    backgroundColor: "#0a0a0a",
+  },
   scrollContainer: {
     flexGrow: 1,
     justifyContent: "center",
@@ -141,6 +161,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#0a0a0a",
     padding: 20,
   },
   card: {
@@ -148,23 +169,81 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     alignSelf: "center",
     padding: 24,
+    backgroundColor: "#161616",
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#333",
   },
   title: {
+    fontSize: 22,
     fontWeight: "700",
+    color: "#fff",
     textTransform: "uppercase",
     marginBottom: 8,
     textAlign: "center",
   },
   subtitle: {
+    fontSize: 14,
+    color: "#aaa",
     textAlign: "center",
-    marginBottom: 20,
-    opacity: 0.8,
+    marginBottom: 24,
+  },
+  inputContainer: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#ccc",
+    marginBottom: 6,
+    letterSpacing: 1,
+  },
+  input: {
+    width: "100%",
+    height: 48,
+    backgroundColor: "#222",
+    borderWidth: 1,
+    borderColor: "#444",
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    color: "#fff",
+    fontSize: 16,
+  },
+  button: {
+    width: "100%",
+    height: 48,
+    backgroundColor: "#e60000",
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+  buttonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "bold",
+    letterSpacing: 1,
+  },
+  ghostButton: {
+    width: "100%",
+    height: 48,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  ghostButtonText: {
+    color: "#aaa",
+    fontSize: 14,
+    fontWeight: "600",
   },
   errorText: {
     color: "#ff4444",
     textAlign: "center",
-    marginBottom: 15,
+    marginBottom: 16,
+    fontSize: 14,
   },
   successContainer: {
     alignItems: "center",
@@ -172,7 +251,8 @@ const styles = StyleSheet.create({
   successText: {
     color: "#00C851",
     textAlign: "center",
-    marginBottom: 15,
-    fontSize: 16,
+    marginBottom: 20,
+    fontSize: 15,
+    lineHeight: 22,
   },
 });
