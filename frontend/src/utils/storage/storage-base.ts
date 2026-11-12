@@ -24,7 +24,6 @@ export abstract class StorageBase {
     try {
       return JSON.parse(raw) as Fallback;
     } catch (e) {
-      // Se non è un JSON valido (es. un token JWT), restituisce la stringa grezza
       return raw as unknown as Fallback;
     }
   }
