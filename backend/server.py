@@ -3,6 +3,7 @@ import logging
 import json
 import urllib.request
 import urllib.error
+import secrets
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
@@ -48,6 +49,10 @@ class RegisterModel(BaseModel):
 class ForgotPasswordModel(BaseModel):
     email: EmailStr
 
+class ResetPasswordModel(BaseModel):
+    token: str
+    new_password: str
+
 @app.get("/")
 def read_root():
     return {"status": "online", "message": "SILVER-PT-HUB Backend operativo"}
@@ -86,62 +91,95 @@ async def register(data: RegisterModel):
 @app.post("/api/auth/forgot-password/")
 async def forgot_password(data: ForgotPasswordModel):
     user = users_collection.find_one({"email": data.email})
-    if not user:
-        logger.info(f"Richiesta di recupero per email non registrata: {data.email}")
     
-    brevo_api_key = os.getenv("BREVO_API_KEY")
-    sender_email = os.getenv("SMTP_EMAIL") or "noreply.silver.pt@gmail.com"
-    
-    if not brevo_api_key:
-        logger.error("BREVO_API_KEY non trovata nelle variabili d'ambiente!")
-        raise HTTPException(status_code=500, detail="Errore di configurazione del server email")
-
-    try:
-        url = "https://api.brevo.com/v3/smtp/email"
-        payload = {
-            "sender": {
-                "name": "SILVER-PT-HUB",
-                "email": sender_email.strip()
-            },
-            "to": [
-                {
-                    "email": data.email
-                }
-            ],
-            "subject": "Recupero Password - SILVER-PT-HUB",
-            "htmlContent": (
-                "<div style='font-family: Arial, sans-serif; color: #333;'>"
-                "<h2>Recupero Password - SILVER-PT-HUB</h2>"
-                "<p>Ciao,</p>"
-                "<p>Abbiamo ricevuto una richiesta di recupero password per il tuo account SILVER-PT-HUB.</p>"
-                "<p>Se non sei stato tu, puoi tranquillamente ignorare questa email.</p>"
-                "<br>"
-                "<p>Il team di <b>SILVER-PT</b></p>"
-                "</div>"
-            )
-        }
-        
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode('utf-8'),
-            headers={
-                "api-key": brevo_api_key.strip(),
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            },
-            method="POST"
+    # Anche se l'utente non esiste, per sicurezza restituiamo comunque OK per evitare enumerazione email,
+    # ma se esiste generiamo il token.
+    if user:
+        reset_token = secrets.token_urlsafe(32)
+        # Salviamo il token nel database associato all'utente
+        users_collection.update_one(
+            {"email": data.email},
+            {"$set": {"reset_token": reset_token}}
         )
         
-        with urllib.request.urlopen(req) as response:
-            response_body = response.read().decode('utf-8')
-            logger.info(f"Email inviata con successo tramite Brevo (mittente: {sender_email}) a {data.email}")
-            return {"ok": True, "message": "Istruzioni inviate via email"}
+        # Link che punta alla tua app frontend su Vercel
+        reset_link = f"https://silver-pt-training.vercel.app/reset-password?token={reset_token}"
+        
+        brevo_api_key = os.getenv("BREVO_API_KEY")
+        sender_email = os.getenv("SMTP_EMAIL") or "noreply.silver.pt@gmail.com"
+        
+        if not brevo_api_key:
+            logger.error("BREVO_API_KEY non trovata nelle variabili d'ambiente!")
+            raise HTTPException(status_code=500, detail="Errore di configurazione del server email")
+
+        try:
+            url = "https://api.brevo.com/v3/smtp/email"
+            payload = {
+                "sender": {
+                    "name": "SILVER-PT-HUB",
+                    "email": sender_email.strip()
+                },
+                "to": [{"email": data.email}],
+                "subject": "Reset della Password - SILVER-PT-HUB",
+                "htmlContent": (
+                    "<div style='font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;'>"
+                    "<h2 style='color: #e60000;'>SILVER-PT-HUB</h2>"
+                    "<h3>Richiesta di ripristino password</h3>"
+                    "<p>Ciao,</p>"
+                    "<p>Abbiamo ricevuto una richiesta per reimpostare la password del tuo account.</p>"
+                    "<p>Clicca sul pulsante sottostante per impostare una nuova password:</p>"
+                    "<div style='text-align: center; margin: 30px 0;'>"
+                    f"<a href='{reset_link}' style='background-color: #e60000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;'>Reimposta Password</a>"
+                    "</div>"
+                    "<p>Se non hai richiesto tu il cambio password, puoi ignorare questa email in sicurezza.</p>"
+                    "<br>"
+                    "<p>Il team di <b>SILVER-PT</b></p>"
+                    "</div>"
+                )
+            }
             
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode('utf-8', errors='ignore')
-        logger.error(f"Errore Brevo API HTTP {e.code}: {error_body}")
-        raise HTTPException(status_code=500, detail="Impossibile inviare l'email di recupero al momento.")
-    except Exception as e:
-        logger.error(f"Errore imprevisto durante l'invio dell'email: {e}")
-        raise HTTPException(status_code=500, detail="Errore interno durante l'invio dell'email.")
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode('utf-8'),
+                headers={
+                    "api-key": brevo_api_key.strip(),
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "User-Agent": "Mozilla/5.0"
+                },
+                method="POST"
+            )
+            
+            with urllib.request.urlopen(req) as response:
+                logger.info(f"Email con link di reset inviata con successo a {data.email}")
+                
+        except Exception as e:
+            logger.error(f"Errore durante l'invio dell'email via Brevo: {e}")
+            raise HTTPException(status_code=500, detail="Impossibile inviare l'email di recupero al momento.")
+
+    return {"ok": True, "message": "Se l'email è registrata, riceverai le istruzioni"}
+
+@app.post("/auth/reset-password")
+@app.post("/api/auth/reset-password")
+@app.post("/auth/reset-password/")
+@app.post("/api/auth/reset-password/")
+async def reset_password(data: ResetPasswordModel):
+    # Cerca l'utente tramite il token di reset
+    user = users_collection.find_one({"reset_token": data.token})
+    if not user:
+        raise HTTPException(status_code=400, detail="Token non valido o scaduto")
+    
+    # Effettua l'hashing della nuova password
+    hashed_password = bcrypt.hashpw(data.new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    
+    # Aggiorna la password e rimuove il token usato
+    users_collection.update_one(
+        {"_id": user["_id"]},
+        {
+            "$set": {"password": hashed_password},
+            "$unset": {"reset_token": ""}
+        }
+    )
+    
+    logger.info(f"Password aggiornata con successo per l'utente {user.get('email')}")
+    return {"ok": True, "message": "Password aggiornata con successo"}
