@@ -89,20 +89,27 @@ async def forgot_password(data: ForgotPasswordModel):
     if not user:
         logger.info(f"Richiesta di recupero per email non registrata: {data.email}")
     
-    resend_api_key = os.getenv("RESEND_API_KEY")
-    resend_from = os.getenv("RESEND_FROM") or "onboarding@resend.dev"
+    brevo_api_key = os.getenv("BREVO_API_KEY")
+    sender_email = os.getenv("SMTP_EMAIL") or "noreply.silver.pt@gmail.com"
     
-    if not resend_api_key:
-        logger.error("RESEND_API_KEY non trovata nelle variabili d'ambiente!")
+    if not brevo_api_key:
+        logger.error("BREVO_API_KEY non trovata nelle variabili d'ambiente!")
         raise HTTPException(status_code=500, detail="Errore di configurazione del server email")
 
     try:
-        url = "https://api.resend.com/emails"
+        url = "https://api.brevo.com/v3/smtp/email"
         payload = {
-            "from": resend_from,
-            "to": [data.email],
+            "sender": {
+                "name": "SILVER-PT-HUB",
+                "email": sender_email.strip()
+            },
+            "to": [
+                {
+                    "email": data.email
+                }
+            ],
             "subject": "Recupero Password - SILVER-PT-HUB",
-            "html": (
+            "htmlContent": (
                 "<div style='font-family: Arial, sans-serif; color: #333;'>"
                 "<h2>Recupero Password - SILVER-PT-HUB</h2>"
                 "<p>Ciao,</p>"
@@ -118,20 +125,22 @@ async def forgot_password(data: ForgotPasswordModel):
             url,
             data=json.dumps(payload).encode('utf-8'),
             headers={
-                "Authorization": f"Bearer {resend_api_key.strip()}",
-                "Content-Type": "application/json"
+                "api-key": brevo_api_key.strip(),
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             },
             method="POST"
         )
         
         with urllib.request.urlopen(req) as response:
             response_body = response.read().decode('utf-8')
-            logger.info(f"Email di recupero inviata con successo tramite Resend a {data.email}. Risposta: {response_body}")
+            logger.info(f"Email inviata con successo tramite Brevo (mittente: {sender_email}) a {data.email}")
             return {"ok": True, "message": "Istruzioni inviate via email"}
             
     except urllib.error.HTTPError as e:
-        error_body = e.read().decode('utf-8')
-        logger.error(f"Errore Resend API HTTP {e.code}: {error_body}")
+        error_body = e.read().decode('utf-8', errors='ignore')
+        logger.error(f"Errore Brevo API HTTP {e.code}: {error_body}")
         raise HTTPException(status_code=500, detail="Impossibile inviare l'email di recupero al momento.")
     except Exception as e:
         logger.error(f"Errore imprevisto durante l'invio dell'email: {e}")
