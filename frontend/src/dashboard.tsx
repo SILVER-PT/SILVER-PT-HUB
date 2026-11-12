@@ -12,14 +12,43 @@ export function useDashboard() {
 export function DashTiles({ d, nutri }: { d: any; nutri?: boolean }) {
   const s = useStyles();
   const router = useRouter();
+
+  const safeD = d || {};
+  const onlineCount = Array.isArray(safeD.online) ? safeD.online.length : 0;
+  const activeSessionsCount = Array.isArray(safeD.active_sessions) ? safeD.active_sessions.length : 0;
+  const renewalsCount = Array.isArray(safeD.finance?.renewals_30d) ? safeD.finance.renewals_30d.length : 0;
+  const monthlyEstimate = safeD.finance?.monthly_estimate ?? 0;
+
   const tiles = [
-    { key: "clients", icon: "people", label: "Clienti", value: d?.clients ?? "—", sub: d ? `${d.online.length} online · ${d.active_sessions.length} in sessione` : "", href: "/team-live" },
-    { key: "appts", icon: "calendar", label: "Appuntamenti", value: d ? `${d.appointments_today}` : "—", sub: d ? `oggi · ${d.appointments_week} questa settimana` : "", href: "/(tabs)/agenda" },
-    { key: "finance", icon: "cash", label: "Finanze", value: d ? `${Math.round(d.finance.monthly_estimate)}€` : "—", sub: d ? `al mese · ${d.finance.renewals_30d.length} rinnovi in 30 gg` : "", href: "/finance" },
+    { 
+      key: "clients", 
+      icon: "people", 
+      label: "Clienti", 
+      value: safeD.clients ?? "—", 
+      sub: d ? `${onlineCount} online · ${activeSessionsCount} in sessione` : "", 
+      href: "/team-live" 
+    },
+    { 
+      key: "appts", 
+      icon: "calendar", 
+      label: "Appuntamenti", 
+      value: safeD.appointments_today !== undefined ? `${safeD.appointments_today}` : "—", 
+      sub: d ? `oggi · ${safeD.appointments_week ?? 0} questa settimana` : "", 
+      href: "/(tabs)/agenda" 
+    },
+    { 
+      key: "finance", 
+      icon: "cash", 
+      label: "Finanze", 
+      value: `${Math.round(monthlyEstimate)}€`, 
+      sub: d ? `al mese · ${renewalsCount} rinnovi in 30 gg` : "", 
+      href: "/finance" 
+    },
     nutri
       ? { key: "plans", icon: "document-text", label: "Tariffe", value: "", sub: "prestazioni e listino", href: "/packages" }
       : { key: "exercises", icon: "barbell", label: "Esercizi", value: "", sub: "libreria per distretti + tuoi video", href: "/exercises" },
   ];
+
   return (
     <View style={s.grid}>
       {tiles.map((t) => (
