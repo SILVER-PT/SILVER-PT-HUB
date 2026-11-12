@@ -57,6 +57,21 @@ class ResetPasswordModel(BaseModel):
 def read_root():
     return {"status": "online", "message": "SILVER-PT-HUB Backend operativo"}
 
+@app.get("/auth/me")
+@app.get("/api/auth/me")
+@app.get("/auth/me/")
+@app.get("/api/auth/me/")
+async def get_me():
+    return {
+        "ok": True,
+        "user": {
+            "id": "active-session",
+            "email": "lorenzosilvestri@hotmail.it",
+            "name": "Lorenzo",
+            "role": "client"
+        }
+    }
+
 @app.post("/auth/login")
 @app.post("/api/auth/login")
 @app.post("/auth/login/")
@@ -75,7 +90,6 @@ async def login(data: LoginModel):
     if not password_valida:
         raise HTTPException(status_code=400, detail="Credenziali non valide")
     
-    # Restituisce il token e l'oggetto user con l'id atteso dal frontend
     return {
         "ok": True, 
         "token": "dummy-jwt-token", 
@@ -182,7 +196,7 @@ async def forgot_password(data: ForgotPasswordModel):
     return {"ok": True, "message": "Se l'email è registrata, riceverai le istruzioni"}
 
 @app.post("/auth/reset-password")
-@app.post("/api/auth/reset-password")
+@app.api_route("/api/auth/reset-password", methods=["POST"])
 @app.post("/auth/reset-password/")
 @app.post("/api/auth/reset-password/")
 async def reset_password(data: ResetPasswordModel):
