@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Pressable, View, Image } from "react-native";
+import { Pressable, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { api, num } from "@/src/api";
@@ -10,11 +10,14 @@ import { ExerciseImages, ExercisePicker } from "@/src/exercises";
 import { ClientReminder } from "@/src/client-reminder";
 import { Select } from "@/src/select";
 
+// Importiamo il motore anatomico di body-muscles (compatibile web/react)
+// Se usi react-native puro senza webview, gestiamo i distretti tramite griglia interattiva avanzata sincronizzata
+import BodyMuscles from "body-muscles";
+
 const newEx = () => ({ name: "", sets: "3", reps: "10", load: "", rir: "2", rest: "90s", notes: "", type: "reps", technique: "", images: [] as string[], district: "", resistanceProfile: "Multiarticolare" });
 const APPROACHES = ["Ipertrofia", "Forza", "Ricomposizione", "Dimagrimento", "Powerbuilding", "Contest prep", "Ricondizionamento"];
 const RESISTANCE_PROFILES = ["Multiarticolare", "Allungamento", "Accorciamento", "Isometria"];
 
-// Funzione per generare automaticamente il nome della scheda: AAAA.MM.GG - [Approccio] - [Nota/Tipo]
 const generatePlanName = (approach: string, notes: string) => {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -25,7 +28,6 @@ const generatePlanName = (approach: string, notes: string) => {
   return `${yyyy}.${mm}.${dd} - ${appName} - ${desc}`;
 };
 
-// Planned weekly sets per district
 const plannedVolume = (plan: any) => {
   const out: Record<string, number> = {};
   plan.days.forEach((d: any) => d.exercises.forEach((e: any) => { if (e.district) out[e.district] = (out[e.district] || 0) + (num(e.sets) || 0); }));
@@ -90,43 +92,35 @@ function VolumeCard({ plan, upd, clientId }: { plan: any; upd: (fn: (p: any) => 
   );
 }
 
-// Selettore Anatomico Interattivo in stile Workout.lol con vista Fronte/Retro
+// Selettore Anatomico avanzato integrato con la logica vettoriale di Body Muscles
 function InteractiveAnatomySelector({ selectedDistricts, onToggleDistrict }: { selectedDistricts: string[]; onToggleDistrict: (d: string) => void }) {
   const { colors } = useTheme();
   const [gender, setGender] = useState<"male" | "female">("male");
-  const [viewMode, setViewMode] = useState<"fronte" | "retro">("fronte");
+  const [viewMode, setViewMode] = useState<"front" | "back">("front");
 
-  const frontDistricts = [
-    { id: "Petto", label: "Pettorali" },
-    { id: "Spalle", label: "Spalle" },
-    { id: "Bicipiti", label: "Bicipiti" },
-    { id: "Addome", label: "Addominali" },
-    { id: "Quadricipiti", label: "Quadricipiti" },
-    { id: "Avambracci", label: "Avambracci" },
+  const districtsList = [
+    { id: "Petto", label: "Pettorali", muscleKey: "chest" },
+    { id: "Spalle", label: "Spalle", muscleKey: "shoulders" },
+    { id: "Bicipiti", label: "Bicipiti", muscleKey: "biceps" },
+    { id: "Tricipiti", label: "Tricipiti", muscleKey: "triceps" },
+    { id: "Addome", label: "Addome", muscleKey: "abs" },
+    { id: "Dorso", label: "Dorso", muscleKey: "upper-back" },
+    { id: "Quadricipiti", label: "Quadricipiti", muscleKey:quadriceps => "quadriceps" },
+    { id: "Femorali", label: "Femorali", muscleKey: "hamstrings" },
+    { id: "Glutei", label: "Glutei", muscleKey: "gluteal" },
+    { id: "Polpacci", label: "Polpacci", muscleKey: "calves" },
+    { id: "Avambracci", label: "Avambracci", muscleKey: "forearms" },
+    { id: "Trapezio", label: "Trapezio", muscleKey: "trapezius" },
   ];
-
-  const backDistricts = [
-    { id: "Dorso", label: "Gran Dorsale" },
-    { id: "Trapezio", label: "Trapezio" },
-    { id: "Tricipiti", label: "Tricipiti" },
-    { id: "Glutei", label: "Glutei" },
-    { id: "Femorali", label: "Femorali" },
-    { id: "Polpacci", label: "Polpacci" },
-  ];
-
-  const currentList = viewMode === "fronte" ? frontDistricts : backDistricts;
-
-  const anatomyImageSource = gender === "male" 
-    ? require("../assets/images/male-districts.png") 
-    : require("../assets/images/female-districts.png");
 
   return (
     <Card accent style={{ padding: 16, alignItems: "center" }}>
-      <H style={{ marginBottom: 4, letterSpacing: 1 }}>MAPPA ANATOMICA INTERATTIVA</H>
+      <H style={{ marginBottom: 4, letterSpacing: 1 }}>MAPPA MUSCOLARE VETTORIALE</H>
       <T muted style={{ fontSize: 12, textAlign: "center", marginBottom: 14 }}>
-        Tocca i distretti muscolari per attivarli. I gruppi selezionati si illuminano in rosso (<T style={{ color: "#e60000", fontWeight: "bold" }}>#e60000</T>).
+        Seleziona i distretti di allenamento. I gruppi attivi si illuminano in rosso (<T style={{ color: "#e60000", fontWeight: "bold" }}>#e60000</T>).
       </T>
 
+      {/* Switch Genere e Vista */}
       <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%", marginBottom: 14, gap: 8 }}>
         <View style={{ flexDirection: "row", gap: 6, flex: 1 }}>
           <Pressable 
@@ -145,20 +139,21 @@ function InteractiveAnatomySelector({ selectedDistricts, onToggleDistrict }: { s
 
         <View style={{ flexDirection: "row", gap: 6, flex: 1 }}>
           <Pressable 
-            onPress={() => setViewMode("fronte")}
-            style={{ flex: 1, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: viewMode === "fronte" ? "#e60000" : "#333", backgroundColor: viewMode === "fronte" ? "#e60000" : "#111", alignItems: "center" }}
+            onPress={() => setViewMode("front")}
+            style={{ flex: 1, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: viewMode === "front" ? "#e60000" : "#333", backgroundColor: viewMode === "front" ? "#e60000" : "#111", alignItems: "center" }}
           >
             <T style={{ color: "#fff", fontWeight: "bold", fontSize: 11 }}>FRONTE</T>
           </Pressable>
           <Pressable 
-            onPress={() => setViewMode("retro")}
-            style={{ flex: 1, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: viewMode === "retro" ? "#e60000" : "#333", backgroundColor: viewMode === "retro" ? "#e60000" : "#111", alignItems: "center" }}
+            onPress={() => setViewMode("back")}
+            style={{ flex: 1, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: viewMode === "back" ? "#e60000" : "#333", backgroundColor: viewMode === "back" ? "#e60000" : "#111", alignItems: "center" }}
           >
             <T style={{ color: "#fff", fontWeight: "bold", fontSize: 11 }}>RETRO</T>
           </Pressable>
         </View>
       </View>
 
+      {/* Render della mappa vettoriale interattiva stile workout.lol */}
       <View style={{
         width: "100%",
         maxWidth: 280,
@@ -170,19 +165,24 @@ function InteractiveAnatomySelector({ selectedDistricts, onToggleDistrict }: { s
         justifyContent: "center",
         alignItems: "center",
         marginBottom: 14,
-        overflow: "hidden",
-        position: "relative"
+        overflow: "hidden"
       }}>
-        <Image 
-          source={anatomyImageSource} 
-          style={{ width: "100%", height: "100%" }} 
-          resizeMode="contain" 
+        <BodyMuscles
+          model={gender}
+          type={viewMode}
+          data={selectedDistricts.map(d => ({
+            name: districtsList.find(x => x.id === d)?.muscleKey || d.toLowerCase(),
+            intensity: 3, // Intensità massima di illuminazione in rosso
+          }))}
+          onClick={(muscle: any) => {
+            const found = districtsList.find(x => x.muscleKey === muscle.name || x.id.toLowerCase() === muscle.name.toLowerCase());
+            if (found) onToggleDistrict(found.id);
+          }}
+          style={{ width: "100%", height: "100%" }}
         />
-        <View style={{ position: "absolute", bottom: 8, backgroundColor: "rgba(0,0,0,0.7)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
-          <T style={{ fontSize: 10, color: "#aaa", fontWeight: "700" }}>{gender.toUpperCase()} — {viewMode.toUpperCase()}</T>
-        </View>
       </View>
 
+      {/* Griglia rapida di controllo */}
       <View style={{
         width: "100%",
         maxWidth: 340,
@@ -190,14 +190,14 @@ function InteractiveAnatomySelector({ selectedDistricts, onToggleDistrict }: { s
         borderRadius: 16,
         borderWidth: 1.5,
         borderColor: "#222",
-        padding: 12,
-        marginBottom: 14,
+        padding: 10,
+        marginBottom: 12,
         flexDirection: "row",
         flexWrap: "wrap",
         justifyContent: "space-between",
-        gap: 8
+        gap: 6
       }}>
-        {currentList.map((item) => {
+        {districtsList.map((item) => {
           const isSelected = selectedDistricts.includes(item.id);
           return (
             <Pressable
@@ -205,43 +205,31 @@ function InteractiveAnatomySelector({ selectedDistricts, onToggleDistrict }: { s
               onPress={() => onToggleDistrict(item.id)}
               style={({ pressed }) => [
                 {
-                  width: "48%",
-                  minHeight: 48,
-                  borderRadius: 10,
-                  borderWidth: 1.5,
+                  width: "31%",
+                  minHeight: 40,
+                  borderRadius: 8,
+                  borderWidth: 1,
                   borderColor: isSelected ? "#e60000" : "#2a2a2a",
                   backgroundColor: isSelected ? "#e60000" : "#121212",
                   justifyContent: "center",
                   alignItems: "center",
-                  paddingHorizontal: 8,
+                  paddingHorizontal: 2,
                   transform: [{ scale: pressed ? 0.95 : 1 }],
-                  shadowColor: isSelected ? "#e60000" : "transparent",
-                  shadowOffset: { width: 0, height: 0 },
-                  shadowOpacity: 0.7,
-                  shadowRadius: 8,
                 },
               ]}
             >
-              <T style={{ 
-                fontWeight: "900", 
-                fontSize: 12, 
-                color: isSelected ? "#fff" : colors.onSurface, 
-                textAlign: "center",
-                letterSpacing: 0.5
-              }}>
-                {item.label.toUpperCase()}
-              </T>
-              <T style={{ fontSize: 9, color: isSelected ? "#fff" : colors.muted, marginTop: 2 }}>
-                {isSelected ? "ATTIVO ●" : "SELEZIONA"}
+              <T style={{ fontWeight: "900", fontSize: 10, color: isSelected ? "#fff" : colors.onSurface, textAlign: "center" }}>
+                {item.id.toUpperCase()}
               </T>
             </Pressable>
           );
         })}
       </View>
 
+      {/* Badge attivi */}
       <View style={{ width: "100%", flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 6 }}>
         {selectedDistricts.length === 0 ? (
-          <T muted style={{ fontSize: 12, fontStyle: "italic" }}>Nessun distretto selezionato per questo giorno</T>
+          <T muted style={{ fontSize: 12, fontStyle: "italic" }}>Nessun distretto selezionato</T>
         ) : (
           selectedDistricts.map((d) => (
             <View key={d} style={{ backgroundColor: "#e60000", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}>
@@ -438,7 +426,7 @@ export default function PlanEdit() {
       ))}
 
       <Btn testID="add-day-button" variant="dark" icon="add" title="Aggiungi giorno" onPress={() => upd((p) => { p.days.push({ name: `Giorno ${String.fromCharCode(65 + p.days.length)}`, districts: [], exercises: [newEx()] }); })} />
-      <ErrorText text={err} />
+      <ErrorText test err={err} />
       <Btn testID="plan-save-button" icon="save" title="Salva scheda" loading={busy} onPress={ask} />
       
       <ExercisePicker visible={!!pick} onClose={() => setPick(null)} initial={pick ? plan.days[pick.di]?.exercises[pick.ei]?.name || "" : ""}
