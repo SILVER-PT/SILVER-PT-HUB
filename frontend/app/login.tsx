@@ -47,9 +47,10 @@ export default function LoginScreen() {
 
       if (data.user && data.user.id) {
         await AsyncStorage.setItem("token", data.token || "");
-        await AsyncStorage.setItem("userId", data.user.id);
+        await AsyncStorage.setItem("userId", String(data.user.id));
         await AsyncStorage.setItem("userData", JSON.stringify(data.user));
 
+        // Reindirizzamento sicuro alla index principale
         router.replace("/");
       } else {
         throw new Error("Dati utente incompleti nella risposta del server");
