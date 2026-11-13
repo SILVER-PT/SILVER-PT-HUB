@@ -50,7 +50,7 @@ export default function LoginScreen() {
         await AsyncStorage.setItem("userId", String(data.user.id));
         await AsyncStorage.setItem("userData", JSON.stringify(data.user));
 
-        // Reindirizzamento sicuro alla index principale
+        // Reindirizzamento pulito alla root/index
         router.replace("/");
       } else {
         throw new Error("Dati utente incompleti nella risposta del server");
@@ -70,7 +70,6 @@ export default function LoginScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.card}>
-          {/* Logo ingrandito e sfondo uniformato */}
           <Image
             source={require("../assets/images/logo-hub.png")}
             style={styles.logo}
@@ -187,7 +186,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "750",
     color: "#aaa",
     marginBottom: 6,
     letterSpacing: 1,
