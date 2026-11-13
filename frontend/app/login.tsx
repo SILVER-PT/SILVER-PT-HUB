@@ -50,8 +50,8 @@ export default function LoginScreen() {
         await AsyncStorage.setItem("userId", String(data.user.id));
         await AsyncStorage.setItem("userData", JSON.stringify(data.user));
 
-        // Reindirizzamento pulito alla root/index
-        router.replace("/");
+        // Reindirizzamento forzato al gruppo principale dell'app per sbloccare la navigazione
+        router.replace("/(tabs)");
       } else {
         throw new Error("Dati utente incompleti nella risposta del server");
       }
@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 12,
-    fontWeight: "750",
+    fontWeight: "700",
     color: "#aaa",
     marginBottom: 6,
     letterSpacing: 1,
