@@ -5,24 +5,35 @@ import { uploadForm } from "@/src/utils/upload";
 
 export const API = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`;
 let token = "";
+let isLoaded = false;
 
 export async function setToken(t: string | null) {
   token = t || "";
+  isLoaded = true;
   if (t) await storage.secureSet("token", t);
   else await storage.secureRemove("token");
 }
 
 export async function loadToken() {
-  token = (await storage.secureGet("token", "")) || "";
+  if (!token || !isLoaded) {
+    token = (await storage.secureGet("token", "")) || "";
+    isLoaded = true;
+  }
   return token;
 }
 
 export async function api<T = any>(path: string, opts: { method?: string; body?: any } = {}): Promise<T> {
+  // Assicuriamoci che il token sia sempre caricato prima di fare una fetch
+  if (!token) {
+    await loadToken();
+  }
+
   const r = await fetch(API + path, {
     method: opts.method || "GET",
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   });
+
   const txt = await r.text();
   let data: any = null;
   try {
@@ -30,6 +41,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   } catch {
     data = null;
   }
+
   if (!r.ok) {
     const d = data?.detail;
     throw new Error(typeof d === "string" ? d : d ? "Dati non validi" : `Errore ${r.status}`);
@@ -40,6 +52,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
 export const fileUrl = (path: string) => `${API}/files/${path}?token=${token}`;
 
 export async function uploadFile(asset: { uri: string; fileName?: string | null; mimeType?: string | null }, fallbackName: string) {
+  if (!token) await loadToken();
   const res = await uploadForm(`${API}/upload`, {
     headers: { Authorization: `Bearer ${token}` },
     files: { file: { uri: asset.uri, name: asset.fileName || fallbackName, mimeType: asset.mimeType || undefined } },
