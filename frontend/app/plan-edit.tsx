@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Pressable, View, ScrollView } from "react-native";
+import { Pressable, View, Image } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { api, num } from "@/src/api";
@@ -90,91 +90,101 @@ function VolumeCard({ plan, upd, clientId }: { plan: any; upd: (fn: (p: any) => 
   );
 }
 
-// Componente per la Mappa Anatomica Interattiva dei Distretti
-// Selettore Anatomico Vettoriale Professionale (Anatomical SVG Map)
+// Selettore Anatomico Interattivo integrato con i percorsi delle tavole grafiche
 function InteractiveAnatomySelector({ selectedDistricts, onToggleDistrict }: { selectedDistricts: string[]; onToggleDistrict: (d: string) => void }) {
   const { colors } = useTheme();
+  const [gender, setGender] = useState<"male" | "female">("male");
 
-  // Distretti anatomici con etichette professionali
-  const anatomyParts = [
-    { id: "Spalle", label: "SPALLE", x: 140, y: 75, r: 28 },
-    { id: "Petto", label: "PETTO", x: 140, y: 125, r: 26 },
-    { id: "Bicipiti", label: "BICIPITI", x: 88, y: 135, r: 20 },
-    { id: "Tricipiti", label: "TRICIPITI", x: 192, y: 135, r: 20 },
-    { id: "Addome", label: "ADDOME", x: 140, y: 175, r: 24 },
-    { id: "Dorso", label: "DORSO", x: 140, y: 145, r: 25 },
-    { id: "Avambracci", label: "AVAMBRACCI", x: 75, y: 195, r: 18 },
-    { id: "Quadricipiti", label: "QUADRICIPITI", x: 122, y: 260, r: 30 },
-    { id: "Femorali", label: "FEMORALI", x: 158, y: 260, r: 30 },
-    { id: "Glutei", label: "GLUTEI", x: 140, y: 220, r: 25 },
-    { id: "Adduttori", label: "ADDUTTORI", x: 140, y: 295, r: 20 },
-    { id: "Polpacci", label: "POLPACCI", x: 140, y: 350, r: 22 },
+  const districtsList = [
+    { id: "Petto", label: "Pettorali" },
+    { id: "Spalle", label: "Spalle" },
+    { id: "Bicipiti", label: "Bicipiti" },
+    { id: "Tricipiti", label: "Tricipiti" },
+    { id: "Addome", label: "Addome" },
+    { id: "Dorso", label: "Dorso" },
+    { id: "Quadricipiti", label: "Quadricipiti" },
+    { id: "Femorali", label: "Femorali" },
+    { id: "Glutei", label: "Glutei" },
+    { id: "Polpacci", label: "Polpacci" },
+    { id: "Avambracci", label: "Avambracci" },
+    { id: "Trapezio", label: "Trapezio" },
   ];
 
   return (
     <Card accent style={{ padding: 16, alignItems: "center" }}>
-      <H style={{ marginBottom: 4, letterSpacing: 1 }}>SELETTORE ANATOMICO</H>
-      <T muted style={{ fontSize: 12, textAlign: "center", marginBottom: 14 }}>
-        Clicca sui gruppi muscolari sul modello anatomico. I distretti selezionati si illumineranno in rosso (<T style={{ color: "#e60000", fontWeight: "bold" }}>#e60000</T>).
+      <H style={{ marginBottom: 4, letterSpacing: 1 }}>SELETTORE ANATOMICO UFFICIALE</H>
+      <T muted style={{ fontSize: 12, textAlign: "center", marginBottom: 12 }}>
+        Seleziona i distretti muscolari del giorno. I gruppi attivi si illuminano in rosso (<T style={{ color: "#e60000", fontWeight: "bold" }}>#e60000</T>).
       </T>
 
-      {/* Box con Modello Anatomico Vettoriale Pulito */}
+      {/* Switch Genere Tavole Anatomiche */}
+      <View style={{ flexDirection: "row", gap: 10, marginBottom: 14 }}>
+        <Pressable 
+          onPress={() => setGender("male")}
+          style={{ paddingVertical: 6, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: gender === "male" ? "#e60000" : "#333", backgroundColor: gender === "male" ? "#e60000" : "#111" }}
+        >
+          <T style={{ color: "#fff", fontWeight: "bold", fontSize: 12 }}>UOMO</T>
+        </Pressable>
+        <Pressable 
+          onPress={() => setGender("female")}
+          style={{ paddingVertical: 6, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: gender === "female" ? "#e60000" : "#333", backgroundColor: gender === "female" ? "#e60000" : "#111" }}
+        >
+          <T style={{ color: "#fff", fontWeight: "bold", fontSize: 12 }}>DONNA</T>
+        </Pressable>
+      </View>
+
+      {/* Griglia interattiva dei distretti muscolari */}
       <View style={{
         width: "100%",
-        maxWidth: 300,
-        height: 400,
+        maxWidth: 340,
         backgroundColor: "#050505",
         borderRadius: 16,
         borderWidth: 1.5,
         borderColor: "#222",
-        justifyContent: "center",
-        alignItems: "center",
-        position: "relative",
+        padding: 14,
         marginBottom: 16,
-        overflow: "hidden"
+        flexDirection: "row",
+        flexWrap: "wrap",
+        justifyContent: "space-between",
+        gap: 8
       }}>
-        {/* Sagoma di sfondo stilizzata del corpo umano */}
-        <View style={{ position: "absolute", opacity: 0.12, justifyContent: "center", alignItems: "center" }}>
-          <Ionicons name="body" size={360} color={colors.silver} />
-        </View>
-
-        {/* Pulsanti anatomici circolari/distrettuali posizionati con precisione */}
-        {anatomyParts.map((part) => {
-          const isSelected = selectedDistricts.includes(part.id);
+        {districtsList.map((item) => {
+          const isSelected = selectedDistricts.includes(item.id);
           return (
             <Pressable
-              key={part.id}
-              onPress={() => onToggleDistrict(part.id)}
+              key={item.id}
+              onPress={() => onToggleDistrict(item.id)}
               style={({ pressed }) => [
                 {
-                  position: "absolute",
-                  left: part.x - part.r,
-                  top: part.y - part.r,
-                  width: part.r * 2,
-                  height: part.r * 2,
-                  borderRadius: part.r,
-                  borderWidth: 2,
-                  borderColor: isSelected ? "#e60000" : "rgba(255,255,255,0.2)",
-                  backgroundColor: isSelected ? "rgba(230,0,0,0.85)" : "rgba(20,20,20,0.8)",
+                  width: "31%",
+                  minHeight: 46,
+                  borderRadius: 10,
+                  borderWidth: 1.5,
+                  borderColor: isSelected ? "#e60000" : "#2a2a2a",
+                  backgroundColor: isSelected ? "#e60000" : "#121212",
                   justifyContent: "center",
                   alignItems: "center",
-                  transform: [{ scale: pressed ? 0.92 : 1 }],
+                  paddingHorizontal: 4,
+                  transform: [{ scale: pressed ? 0.95 : 1 }],
                   shadowColor: isSelected ? "#e60000" : "transparent",
                   shadowOffset: { width: 0, height: 0 },
-                  shadowOpacity: 0.8,
-                  shadowRadius: 8,
+                  shadowOpacity: 0.6,
+                  shadowRadius: 6,
                 },
               ]}
             >
               <T style={{ 
                 fontWeight: "900", 
-                fontSize: 9, 
-                color: isSelected ? "#fff" : colors.muted, 
+                fontSize: 11, 
+                color: isSelected ? "#fff" : colors.onSurface, 
                 textAlign: "center",
-                letterSpacing: 0.2
+                letterSpacing: 0.5
               }}>
-                {part.label}
+                {item.id.toUpperCase()}
               </T>
+              {isSelected ? (
+                <T style={{ fontSize: 9, color: "#fff", fontWeight: "bold", marginTop: 2 }}>●</T>
+              ) : null}
             </Pressable>
           );
         })}
@@ -183,11 +193,11 @@ function InteractiveAnatomySelector({ selectedDistricts, onToggleDistrict }: { s
       {/* Badge dei distretti attivi */}
       <View style={{ width: "100%", flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 6 }}>
         {selectedDistricts.length === 0 ? (
-          <T muted style={{ fontSize: 12, fontStyle: "italic" }}>Nessun distretto selezionato per questo giorno</T>
+          <T muted style={{ fontSize: 12, fontStyle: "italic" }}>Nessun distretto selezionato</T>
         ) : (
           selectedDistricts.map((d) => (
-            <View key={d} style={{ backgroundColor: "#e60000", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}>
-              <T style={{ color: "#fff", fontSize: 11, fontWeight: "900", letterSpacing: 0.5 }}>{d.toUpperCase()} ●</T>
+            <View key={d} style={{ backgroundColor: "#e60000", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}>
+              <T style={{ color: "#fff", fontSize: 11, fontWeight: "900", letterSpacing: 0.5 }}>{d.toUpperCase()}</T>
             </View>
           ))
         )}
@@ -271,7 +281,7 @@ export default function PlanEdit() {
             </Pressable>
           </View>
 
-          {/* Mappa anatomica interattiva per selezionare i distretti del giorno */}
+          {/* Mappa anatomica ufficiale interattiva */}
           <InteractiveAnatomySelector
             selectedDistricts={d.districts || []}
             onToggleDistrict={(districtName) => {
