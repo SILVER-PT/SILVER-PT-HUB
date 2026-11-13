@@ -3,7 +3,10 @@ import { useFocusEffect } from "expo-router";
 import { storage } from "@/src/utils/storage";
 import { uploadForm } from "@/src/utils/upload";
 
-export const API = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`;
+// Fallback di sicurezza: se la variabile d'env di Vercel manca, usa direttamente il backend ufficiale
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "https://silver-pt-hub.onrender.com";
+export const API = `${BACKEND_URL}/api`;
+
 let token = "";
 let isLoaded = false;
 
