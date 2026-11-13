@@ -236,7 +236,7 @@ export default function PlanEdit() {
   const { clientId, planId } = useLocalSearchParams<{ clientId: string; planId?: string }>();
   const router = useRouter();
   const { colors } = useTheme();
-  const [plan, setPlan] = useState<any>(planId ? null : { name: generatePlanName("Ipertrofia", "cardio HIIT"), notes: "", days: [{ name: "Giorno A", districts: [], exercises: [newEx()] }], volume: { weekly_total: "", per_district: {} } });
+  const [plan, setPlan] = useState<any>(planId && planId !== "undefined" ? null : { name: generatePlanName("Ipertrofia", "cardio HIIT"), notes: "", days: [{ name: "Giorno A", districts: [], exercises: [newEx()] }], volume: { weekly_total: "", per_district: {} } });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
@@ -245,19 +245,35 @@ export default function PlanEdit() {
   const [open, setOpen] = useState<string>("0-0");
   const [confirm, setConfirm] = useState(false);
 
-  useEffect(() => { api(`/clients/${clientId}/maxes`).then(setMaxes).catch(() => {}); }, [clientId]);
-  useEffect(() => { if (planId) api(`/plans/${planId}`).then(setPlan).catch((e) => setErr(e.message)); }, [planId]);
+  const isValidClient = Boolean(clientId && clientId !== "undefined");
+
+  useEffect(() => { 
+    if (isValidClient) {
+      api(`/clients/${clientId}/maxes`).then(setMaxes).catch(() => {}); 
+    }
+  }, [clientId, isValidClient]);
+
+  useEffect(() => { 
+    if (planId && planId !== "undefined") {
+      api(`/plans/${planId}`).then(setPlan).catch((e) => setErr(e.message)); 
+    }
+  }, [planId]);
 
   if (!plan) return <Screen title="Scheda" back><Loading /></Screen>;
 
   const upd = (fn: (p: any) => void) => setPlan((p: any) => { const c = JSON.parse(JSON.stringify(p)); fn(c); return c; });
 
   const save = async (notify: boolean) => {
+    if (!isValidClient) {
+      setErr("ID cliente non valido. Torna indietro e seleziona un cliente.");
+      setConfirm(false);
+      return;
+    }
     setConfirm(false);
     setBusy(true);
     try {
       const body = { client_id: clientId, name: plan.name, notes: plan.notes, days: plan.days, approach: plan.approach || "", active: plan.active !== false, volume: plan.volume || {}, notify };
-      if (planId) await api(`/plans/${planId}`, { method: "PUT", body });
+      if (planId && planId !== "undefined") await api(`/plans/${planId}`, { method: "PUT", body });
       else await api("/plans", { method: "POST", body });
       if (router.canGoBack()) router.back();
       else router.replace(`/plans/${clientId}`);
@@ -274,10 +290,10 @@ export default function PlanEdit() {
   };
 
   return (
-    <Screen title={planId ? "Modifica scheda" : "Nuova scheda"} back>
-      <ClientReminder clientId={clientId} />
+    <Screen title={planId && planId !== "undefined" ? "Modifica scheda" : "Nuova scheda"} back>
+      {isValidClient ? <ClientReminder clientId={clientId} /> : null}
       <Btn testID="ai-plan-open-button" icon="sparkles" variant="ghost" title="Genera con AI / Guidata ISSA" onPress={() => setAiOpen(true)} />
-      <AiPlanSheet visible={aiOpen} onClose={() => setAiOpen(false)} clientId={clientId} volume={plan.volume} onPlan={(g) => setPlan((p: any) => ({ ...p, name: p.name || g.name || "", approach: g.approach || p.approach, notes: g.notes || p.notes, days: g.days?.length ? g.days : p.days }))} />
+      <AiPlanSheet visible={aiOpen} onClose={() => setAiOpen(false)} clientId={isValidClient ? clientId : ""} volume={plan.volume} onPlan={(g) => setPlan((p: any) => ({ ...p, name: p.name || g.name || "", approach: g.approach || p.approach, notes: g.notes || p.notes, days: g.days?.length ? g.days : p.days }))} />
       
       {/* Nomenclatura automatica / Modificabile */}
       <Field testID="plan-name-input" label="Nome scheda (es. AAAA.MM.GG - Approccio - Note)" value={plan.name} onChangeText={(v) => upd((p) => { p.name = v; })} />
@@ -294,7 +310,7 @@ export default function PlanEdit() {
         });
       }} />
       
-      <VolumeCard plan={plan} upd={upd} clientId={clientId} />
+      <VolumeCard plan={plan} upd={upd} clientId={isValidClient ? clientId : ""} />
       <Toggle testID="plan-active-toggle" label="Scheda attiva" hint="Se disattivata resta nello storico ma il cliente non la vede in Home" value={plan.active !== false} onChange={(v) => upd((p) => { p.active = v; })} />
       
       {/* Gestione Giorni e Selettore Anatomico */}
@@ -410,7 +426,7 @@ export default function PlanEdit() {
         onPick={(x) => pick && upd((p) => { const e = p.days[pick.di].exercises[pick.ei]; e.images = x.images; if (!e.name && x.name) e.name = x.name; })} />
       
       <Sheet visible={confirm} onClose={() => setConfirm(false)} title="Notificare il cliente?">
-        <T>Vuoi avvisare il cliente che la scheda è stata {planId ? "modificata" : "creata"}?</T>
+        <T>Vuoi avvisare il cliente che la scheda è stata {planId && planId !== "undefined" ? "modificata" : "creata"}?</T>
         <Btn testID="plan-save-notify" icon="notifications" title="Salva e notifica" onPress={() => save(true)} />
         <Btn testID="plan-save-silent" variant="dark" icon="save" title="Salva senza notificare" onPress={() => save(false)} />
       </Sheet>
