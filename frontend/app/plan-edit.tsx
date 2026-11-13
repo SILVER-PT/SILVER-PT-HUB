@@ -90,7 +90,7 @@ function VolumeCard({ plan, upd, clientId }: { plan: any; upd: (fn: (p: any) => 
   );
 }
 
-// Selettore Anatomico Interattivo integrato con i percorsi delle tavole grafiche
+// Selettore Anatomico Ufficiale integrato con le immagini reali da GitHub
 function InteractiveAnatomySelector({ selectedDistricts, onToggleDistrict }: { selectedDistricts: string[]; onToggleDistrict: (d: string) => void }) {
   const { colors } = useTheme();
   const [gender, setGender] = useState<"male" | "female">("male");
@@ -110,27 +110,53 @@ function InteractiveAnatomySelector({ selectedDistricts, onToggleDistrict }: { s
     { id: "Trapezio", label: "Trapezio" },
   ];
 
+  // Riferimento alle tavole anatomiche caricate nel repository
+  const anatomyImageSource = gender === "male" 
+    ? require("../assets/images/male-districts.png") 
+    : require("../assets/images/female-districts.png");
+
   return (
     <Card accent style={{ padding: 16, alignItems: "center" }}>
       <H style={{ marginBottom: 4, letterSpacing: 1 }}>SELETTORE ANATOMICO UFFICIALE</H>
       <T muted style={{ fontSize: 12, textAlign: "center", marginBottom: 12 }}>
-        Seleziona i distretti muscolari del giorno. I gruppi attivi si illuminano in rosso (<T style={{ color: "#e60000", fontWeight: "bold" }}>#e60000</T>).
+        Consulta la tavola anatomica e seleziona i distretti del giorno. I gruppi attivi si illuminano in rosso (<T style={{ color: "#e60000", fontWeight: "bold" }}>#e60000</T>).
       </T>
 
       {/* Switch Genere Tavole Anatomiche */}
       <View style={{ flexDirection: "row", gap: 10, marginBottom: 14 }}>
         <Pressable 
           onPress={() => setGender("male")}
-          style={{ paddingVertical: 6, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: gender === "male" ? "#e60000" : "#333", backgroundColor: gender === "male" ? "#e60000" : "#111" }}
+          style={{ paddingVertical: 6, paddingHorizontal: 18, borderRadius: 8, borderWidth: 1, borderColor: gender === "male" ? "#e60000" : "#333", backgroundColor: gender === "male" ? "#e60000" : "#111" }}
         >
           <T style={{ color: "#fff", fontWeight: "bold", fontSize: 12 }}>UOMO</T>
         </Pressable>
         <Pressable 
           onPress={() => setGender("female")}
-          style={{ paddingVertical: 6, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: gender === "female" ? "#e60000" : "#333", backgroundColor: gender === "female" ? "#e60000" : "#111" }}
+          style={{ paddingVertical: 6, paddingHorizontal: 18, borderRadius: 8, borderWidth: 1, borderColor: gender === "female" ? "#e60000" : "#333", backgroundColor: gender === "female" ? "#e60000" : "#111" }}
         >
           <T style={{ color: "#fff", fontWeight: "bold", fontSize: 12 }}>DONNA</T>
         </Pressable>
+      </View>
+
+      {/* Visualizzazione Tavola Anatomica Reale */}
+      <View style={{
+        width: "100%",
+        maxWidth: 280,
+        height: 320,
+        backgroundColor: "#050505",
+        borderRadius: 14,
+        borderWidth: 1.5,
+        borderColor: "#222",
+        justifyContent: "center",
+        alignItems: "center",
+        marginBottom: 16,
+        overflow: "hidden"
+      }}>
+        <Image 
+          source={anatomyImageSource} 
+          style={{ width: "100%", height: "100%" }} 
+          resizeMode="contain" 
+        />
       </View>
 
       {/* Griglia interattiva dei distretti muscolari */}
