@@ -9,16 +9,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from pymongo import MongoClient
 import bcrypt
+from pywebpush import webpush, WebPushException
 
 # Configurazione logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("silver-pt-backend")
 
 app = FastAPI(title="SILVER-PT-HUB API", version="1.0.0")
+
 @app.get("/api/cs")
 @app.get("/cs")
 async def handle_undefined_cs(role: str = None):
     return []
+
 # Configurazione CORS (per permettere le chiamate da Vercel)
 app.add_middleware(
     CORSMiddleware,
@@ -245,3 +248,27 @@ async def reset_password(data: ResetPasswordModel):
     
     logger.info(f"Password aggiornata con successo per l'utente {user.get('email')}")
     return {"ok": True, "message": "Password aggiornata con successo"}
+
+
+# ==========================================
+# ROTTA PER LE NOTIFICHE PUSH WEB
+# ==========================================
+@app.post("/api/notifications/subscribe")
+@app.post("/notifications/subscribe")
+async def save_subscription(data: dict):
+    email = data.get("email") or "lorenzosilvestri@hotmail.it"
+    subscription = data.get("subscription") or {
+        "endpoint": data.get("endpoint"),
+        "keys": data.get("keys")
+    }
+    
+    if not subscription.get("endpoint"):
+        raise HTTPException(status_code=400, detail="Dati di sottoscrizione non validi")
+        
+    users_collection.update_one(
+        {"email": email},
+        {"$set": {"push_subscription": subscription}},
+        upsert=True
+    )
+    logger.info(f"Sottoscrizione push salvata per l'utente: {email}")
+    return {"ok": True, "message": "Sottoscrizione push salvata con successo"}
