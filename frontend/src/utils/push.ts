@@ -1,42 +1,45 @@
 import { api } from "@/src/api";
 
 export async function registerPushNotifications() {
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-    console.log("Le Web Push non sono supportate da questo browser.");
+  // 1. Controllo di sicurezza per evitare il crash su Vercel (SSR)
+  if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    console.log("Le Web Push non sono supportate o siamo in fase di rendering iniziale.");
     return;
   }
 
   try {
-    // 1. Registra il Service Worker
+    // 2. Registra il Service Worker
     const registration = await navigator.serviceWorker.register('/sw.js');
     
-    // 2. Chiedi il permesso all'utente
+    // 3. Chiedi il permesso all'utente
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
-      console.log("Permesso notifiche negato.");
+      console.log("Permesso notifiche negato dall'utente.");
       return;
     }
 
-    // 3. Prendi la chiave pubblica dalle variabili d'ambiente di Vercel
+    // 4. Prendi la chiave pubblica dalle variabili d'ambiente di Vercel
     const publicVapidKey = process.env.EXPO_PUBLIC_VAPID_PUBLIC_KEY;
     if (!publicVapidKey) {
-      console.error("Manca la EXPO_PUBLIC_VAPID_PUBLIC_KEY");
+      console.error("Manca la variabile EXPO_PUBLIC_VAPID_PUBLIC_KEY su Vercel");
       return;
     }
 
-    // Converti la chiave in Uint8Array come richiesto dal browser
     const convertedVapidKey = urlBase64ToUint8Array(publicVapidKey);
 
-    // 4. Crea la sottoscrizione
+    // 5. Crea la sottoscrizione
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: convertedVapidKey
     });
 
-    // 5. Invia la sottoscrizione al backend FastAPI per salvarla nel database
+    // 6. Invia la sottoscrizione al backend FastAPI su Render
     await api("/notifications/subscribe", {
       method: "POST",
-      body: subscription
+      body: {
+        email: "lorenzosilvestri@hotmail.it",
+        subscription: subscription
+      }
     });
 
     console.log("Notifiche Web Push attivate con successo!");
@@ -45,7 +48,6 @@ export async function registerPushNotifications() {
   }
 }
 
-// Funzione di servizio per convertire la chiave VAPID
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
