@@ -10,10 +10,56 @@ const webNotif = () => (Platform.OS === "web" && typeof window !== "undefined" &
 
 export const browserNotifSupported = () => !!webNotif();
 export const browserNotifGranted = () => webNotif()?.permission === "granted";
+
 export async function enableBrowserNotif() {
   const N = webNotif();
   if (!N) return "unsupported";
-  return await N.requestPermission();
+  
+  const permission = await N.requestPermission();
+  if (permission === "granted" && "serviceWorker" in navigator && "PushManager" in window) {
+    try {
+      // 1. Registra il Service Worker
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
+
+      // 2. Prendi la chiave pubblica VAPID da Vercel
+      const publicVapidKey = process.env.EXPO_PUBLIC_VAPID_PUBLIC_KEY;
+      if (publicVapidKey) {
+        const convertedVapidKey = urlBase64ToUint8Array(publicVapidKey);
+        
+        // 3. Crea la sottoscrizione Web Push
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey,
+        });
+
+        // 4. Invia la sottoscrizione al backend FastAPI su Render
+        await api("/notifications/subscribe", {
+          method: "POST",
+          body: {
+            email: "lorenzosilvestri@hotmail.it",
+            subscription: subscription,
+          },
+        });
+        console.log("Web Push registrate e salvate sul backend con successo!");
+      }
+    } catch (e) {
+      console.error("Errore durante la registrazione delle push avanzate:", e);
+    }
+  }
+  return permission;
+}
+
+// Funzione di servizio per convertire la chiave VAPID
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/\-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(0);
+  }
+  return outputArray;
 }
 
 let shared = { count: 0 };
