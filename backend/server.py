@@ -113,12 +113,26 @@ async def login(data: LoginModel):
     if not user:
         raise HTTPException(status_code=400, detail="Credenziali non valide")
     
-    # Verifica della password con bcrypt
-    password_valida = bcrypt.checkpw(
-        data.password.encode('utf-8'), 
-        user["password"].encode('utf-8')
-    )
+    stored_password = user.get("password", "")
+    password_valida = False
     
+    try:
+        # Verifica se la password nel DB è un hash bcrypt valido o una stringa in chiaro
+        if stored_password.startswith("$2b$") or stored_password.startswith("$2a$"):
+            password_valida = bcrypt.checkpw(
+                data.password.encode('utf-8'), 
+                stored_password.encode('utf-8')
+            )
+        else:
+            # Fallback di sicurezza per password legacy non hashate
+            password_valida = (data.password == stored_password)
+            if password_valida:
+                hashed = bcrypt.hashpw(data.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                users_collection.update_one({"_id": user["_id"]}, {"$set": {"password": hashed}})
+    except Exception as e:
+        logger.error(f"Errore durante la verifica della password per {data.email}: {e}")
+        password_valida = False
+
     if not password_valida:
         raise HTTPException(status_code=400, detail="Credenziali non valide")
     
@@ -248,7 +262,6 @@ async def reset_password(data: ResetPasswordModel):
     
     logger.info(f"Password aggiornata con successo per l'utente {user.get('email')}")
     return {"ok": True, "message": "Password aggiornata con successo"}
-
 
 # ==========================================
 # ROTTA PER LE NOTIFICHE PUSH WEB
